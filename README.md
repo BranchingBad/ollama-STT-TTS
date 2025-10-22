@@ -134,10 +134,6 @@ Default: ``2``
 
 Default: ``2.0``
 
-``--silence-seconds``: Seconds of silence to wait before stopping recording.
-
-Default: ``2.0``
-
 ``--listen-timeout``: Seconds to wait for speech to start before timing out.
 
 Default: ``5.0``
