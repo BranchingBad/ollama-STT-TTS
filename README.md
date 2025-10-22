@@ -6,9 +6,15 @@ A simple, hands-free Python voice assistant that runs 100% locally. This script 
 
 The assistant operates in a continuous loop with the following flow:
 
-[Microphone] ➡️ [openwakeword] ➡️ [webrtcvad] ➡️ [Whisper STT] ➡️ [Ollama LLM] ➡️ [pyttsx3 TTS] ➡️ [Speaker]
-
-(Listens for "hey mycroft") (Records until silence) (Transcribes audio) (Generates response) (Speaks response)
+```mermaid
+flowchart LR
+    A[Microphone] --> B(openwakeword);
+    B -- "hey mycroft" --> C(webrtcvad);
+    C -- "Records until silence" --> D[Whisper STT];
+    D -- "Transcribes audio" --> E[Ollama LLM];
+    E -- "Generates response" --> F[pyttsx3 TTS];
+    F -- "Speaks response" --> G[Speaker];
+```
 
 ## Features
 - **100% Local**: No cloud services are required for STT, TTS, or the LLM.
