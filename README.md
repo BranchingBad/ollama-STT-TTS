@@ -80,9 +80,9 @@ python ollama_voice_chat.py
 
 On the first run, the script will automatically download the Whisper (``base.en``) and openwakeword models.
 
-You will see the message: ``Ready! Listening for 'hey ollama'...``
+You will see the message: ``Ready! Listening for 'hey mycroft'...``
 
-Say "Hey Ollama".
+Say "Hey mycroft".
 
 The assistant will respond "Yes?" and begin listening for your command.
 
