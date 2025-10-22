@@ -38,7 +38,7 @@ ollama pull mistral
 
 ### C. System Dependencies
 
-The PyAudio library requires portaudio.
+The ``PyAudio`` library requires ``portaudio``.
 
 On macOS (via Homebrew):
 ```bash
@@ -78,9 +78,9 @@ Run the main script:
 python ollama_voice_chat.py
 ```
 
-On the first run, the script will automatically download the Whisper (base.en) and openwakeword models.
+On the first run, the script will automatically download the Whisper (``base.en``) and openwakeword models.
 
-You will see the message: Ready! Listening for 'hey ollama'...
+You will see the message: ``Ready! Listening for 'hey ollama'...``
 
 Say "Hey Ollama".
 
@@ -92,6 +92,6 @@ The script will transcribe your audio, send it to Ollama, and speak the response
 
 You can stop the script at any time with Ctrl+C.
 
-4. Configuration
+## 4. Configuration
 
-To change the Ollama model, simply edit the ollama.chat(model='llama3', ...) line in the get_ollama_response function in ollama_voice_chat.py.
+To change the Ollama model, simply edit the ollama.chat(model='llama3', ...) line in the get_ollama_response function in ``ollama_voice_chat.py.``
