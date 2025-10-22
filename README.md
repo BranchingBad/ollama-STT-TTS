@@ -1,84 +1,103 @@
-# Ollama Voice Chat Setup (with Wakeword)
+# Ollama STT-TTS Voice Assistant
 
-This script lets you talk to an Ollama model using your voice and hear its responses. It runs in a hands-free mode, waiting for a "wakeword" before it starts listening for your command.
+A simple, hands-free Python voice assistant that runs 100% locally. This script uses Mycroft Precise for wakeword detection, OpenAI's Whisper for transcription, and Ollama for generative AI responses.
 
 ## How It Works
 
-Wait: It uses precise-lite-client (from Mycroft) to listen for the "Hey Mycroft" wakeword.
+The assistant operates in a continuous loop with the following flow:
 
-Listen: When the wakeword is detected, it uses the SpeechRecognition library (with OpenAI's Whisper model locally) to capture audio from your microphone and convert it to text.
+[Microphone] ➡️ [Mycroft Precise] ➡️ [Whisper STT] ➡️ [Ollama LLM] ➡️ [pyttsx3 TTS] ➡️ [Speaker]
+            (Listens for "Hey Mycroft")  (Transcribes audio)  (Generates response) (Speaks response)
 
-Think: It sends this text to your running Ollama instance (using the ollama library).
 
-Speak: It takes the text response from Ollama and uses the pyttsx3 library to convert it back into speech.
+## Features
 
-## 1. Prerequisites (Must Do First!)
+100% Local: No cloud services are required for STT, TTS, or the LLM.
 
-### A. Install Ollama
+Hands-Free: Uses Mycroft Precise for "Hey Mycroft" wakeword detection.
 
-You must have the Ollama application installed and running on your computer.
+High-Quality Transcription: Leverages OpenAI's Whisper model for accurate speech-to-text.
 
-### B. Pull an Ollama Model
+Flexible LLM: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
 
-You need at least one model downloaded. If you don't have one, run this in your terminal:
+### 1. Prerequisites
 
+Before you begin, ensure you have the following installed and running:
+
+A. Ollama
+
+You must have the Ollama application installed and running.
+
+B. Pull an Ollama Model
+
+You need at least one model downloaded for Ollama to use.
+
+# We recommend Llama 3
 ollama pull llama3
 
-
-(You can replace llama3 with another model like mistral if you prefer).
-
-### C. Install Python Libraries
-
-Open your terminal and install the following Python libraries:
-
-# For the Ollama API
-pip install ollama
-
-# For text-to-speech
-pip install pyttsx3
-
-# For speech-to-text
-pip install SpeechRecognition
-
-# For local, high-quality transcription
-pip install openai-whisper
-
-# For microphone access
-pip install PyAudio
-
-# For wakeword detection
-pip install precise-lite-client
+# Or, use another model
+ollama pull mistral
 
 
-### Note on Dependencies:
+C. System Dependencies
 
-On macOS or Linux, you may need to install portaudio first:
+The PyAudio library requires portaudio.
 
-macOS: brew install portaudio
+On macOS (via Homebrew):
 
-Linux: sudo apt-get install portaudio19-dev
+brew install portaudio
 
-## 2. Run the Script
 
-Save the ollama_voice_chat.py file.
+On Debian/Ubuntu Linux:
 
-Make sure your Ollama application is running.
+sudo apt-get install portaudio19-dev
 
-Run the script from your terminal:
+
+### 2. Installation
+
+Clone this repository to your local machine:
+
+git clone [https://github.com/BranchingBad/ollama-STT-TTS.git](https://github.com/BranchingBad/ollama-STT-TTS.git)
+cd ollama-STT-TTS
+
+
+(Recommended) Create a Python virtual environment:
+
+python3 -m venv venv
+source venv/bin/activate
+
+
+Install the required Python libraries using the requirements.txt file:
+
+pip install -r requirements.txt
+
+
+### 3. Usage
+
+Make sure your Ollama application is running in the background.
+
+Run the main script:
 
 python ollama_voice_chat.py
 
 
-The first time you run it, both the Whisper model and the "Hey Mycroft" wakeword model will be downloaded.
+On the first run, the script will automatically download the Whisper (base.en) and Mycroft Precise ("Hey Mycroft") models.
 
-You will see "Listening for wakeword ('hey mycroft')...".
+You will see the message: Listening for wakeword ('hey mycroft')...
 
 Say "Hey Mycroft".
 
-The script will say "Yes?" and you will see "Listening...". Now, say your command.
+The assistant will respond "Yes?" and begin listening for your command.
 
-When you see "Thinking...", Ollama is generating a response.
+Speak your prompt (e.g., "What's the capital of France?").
 
-You'll hear the response, and the script will go back to listening for the wakeword.
+The script will show Ollama is thinking..., generate a response, and speak it back to you. It will then automatically return to listening for the wakeword.
 
-You can stop the script with Ctrl+C in your terminal.
+You can stop the script at any time with Ctrl+C.
+
+### 4. Configuration
+
+To change the Ollama model, simply edit the MODEL_NAME variable at the top of the ollama_voice_chat.py script:
+
+# Change this to your preferred Ollama model
+MODEL_NAME = 'llama3'
