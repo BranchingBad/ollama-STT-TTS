@@ -54,6 +54,7 @@ parser.add_argument('--silence-seconds',
 # Global args (will be populated in main)
 args = None
 SILENCE_CHUNKS = None
+PRE_SPEECH_TIMEOUT_CHUNKS = None # Calculated in main
 
 # --- 3. Global Initialization (Models and Services) ---
 # These are loaded once and accessed by helper functions
@@ -102,33 +103,47 @@ def record_command(initial_chunk):
     """
     Records audio from the user until silence is detected.
     Starts with the initial chunk that triggered the wakeword.
-    Returns audio data as a 32-bit float NumPy array.
+    Returns audio data as a 32-bit float NumPy array, or None if no speech is detected.
     """
     print("Listening for command...")
     frames = [initial_chunk]  # Start with the chunk that triggered the wakeword
     silent_chunks = 0
     is_speaking = False
+    pre_speech_chunks = 0 # Counter for timeout before speech starts
 
     while True:
-        data = stream.read(CHUNK_SIZE)
-        frames.append(data)
-        
-        # Use VAD to check if the chunk contains speech
-        is_speech = vad.is_speech(data, RATE)
+        try:
+            data = stream.read(CHUNK_SIZE)
+            frames.append(data)
+            
+            # Use VAD to check if the chunk contains speech
+            is_speech = vad.is_speech(data, RATE)
 
-        if is_speaking:
-            if not is_speech:
-                silent_chunks += 1
-                if silent_chunks > SILENCE_CHUNKS:
-                    print("Silence detected, processing...")
-                    break
-            else:
-                # Reset silence counter if speech is detected again
+            if is_speaking:
+                if not is_speech:
+                    silent_chunks += 1
+                    if silent_chunks > SILENCE_CHUNKS:
+                        print("Silence detected, processing...")
+                        break
+                else:
+                    # Reset silence counter if speech is detected again
+                    silent_chunks = 0
+            elif is_speech:
+                # Start counting silence only after speech has begun
+                is_speaking = True
                 silent_chunks = 0
-        elif is_speech:
-            # Start counting silence only after speech has begun
-            is_speaking = True
-            silent_chunks = 0
+            else:
+                # --- IMPROVEMENT: Pre-speech timeout ---
+                # If no speech has started, count chunks towards a timeout
+                pre_speech_chunks += 1
+                if pre_speech_chunks > PRE_SPEECH_TIMEOUT_CHUNKS:
+                    print("No speech detected, timing out.")
+                    return None # Return None to indicate no audio was captured
+        except IOError as e:
+            # This can happen if the audio stream is interrupted
+            print(f"Error reading from audio stream: {e}")
+            return None
+
 
     # Combine all audio chunks
     audio_data = b''.join(frames)
@@ -142,13 +157,16 @@ def record_command(initial_chunk):
 # --- 5. Main Loop ---
 def main():
     # Make globals accessible
-    global args, SILENCE_CHUNKS
+    global args, SILENCE_CHUNKS, PRE_SPEECH_TIMEOUT_CHUNKS
     global oww_model, whisper_model, tts_engine, vad, audio, stream
 
     args = parser.parse_args()
     
     # Calculate the number of silent chunks needed based on the duration
     SILENCE_CHUNKS = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
+    # Calculate a 5-second "pre-speech" timeout
+    PRE_SPEECH_TIMEOUT_CHUNKS = int(5.0 * 1000 / CHUNK_DURATION_MS)
+
 
     # --- Initialization ---
     print("Loading models...")
@@ -169,11 +187,17 @@ def main():
 
     # PyAudio
     audio = pyaudio.PyAudio()
-    stream = audio.open(format=FORMAT,
-                        channels=CHANNELS,
-                        rate=RATE,
-                        input=True,
-                        frames_per_buffer=CHUNK_SIZE)
+    try:
+        stream = audio.open(format=FORMAT,
+                            channels=CHANNELS,
+                            rate=RATE,
+                            input=True,
+                            frames_per_buffer=CHUNK_SIZE)
+    except IOError as e:
+        print(f"FATAL ERROR: Could not open audio stream.")
+        print("Please check if a microphone is connected and permissions are correct.")
+        print(f"Details: {e}")
+        return # Exit the script
 
     print(f"\nReady! Listening for '{args.wakeword}'...")
 
@@ -182,8 +206,11 @@ def main():
             # --- Wakeword Listening Loop ---
             audio_chunk = stream.read(CHUNK_SIZE)
             
+            # --- CORRECTION: Convert bytes to NumPy array for openwakeword ---
+            audio_np = np.frombuffer(audio_chunk, dtype=np.int16)
+
             # Feed audio to openwakeword
-            prediction = oww_model.predict(audio_chunk)
+            prediction = oww_model.predict(audio_np)
             
             # Check if the desired wakeword score is high
             if prediction[args.wakeword_model] > args.wakeword_threshold:
@@ -194,6 +221,12 @@ def main():
                 # Record audio *after* the wakeword (and include the trigger chunk)
                 audio_data = record_command(audio_chunk)
                 
+                # --- CORRECTION: Handle timeout from record_command ---
+                if audio_data is None:
+                    speak("I didn't hear anything.")
+                    print(f"\nReady! Listening for '{args.wakeword}'...")
+                    continue # Go back to listening for wakeword
+
                 # --- Process the Command ---
                 print("Transcribing audio...")
                 user_text = transcribe_audio(audio_data)
@@ -201,10 +234,10 @@ def main():
                 if user_text:
                     print(f"You: {user_text}")
                     
-                    # Check for exit commands
-                    user_prompt = user_text.lower().strip()
-                    # Check for exact matches, allowing for punctuation
-                    if user_prompt in ["exit", "exit.", "goodbye", "goodbye."]:
+                    # --- IMPROVEMENT: Robust exit command check ---
+                    # Clean up punctuation and check for start of phrase
+                    user_prompt = user_text.lower().strip().rstrip(".,!?")
+                    if user_prompt.startswith("exit") or user_prompt.startswith("goodbye"):
                         speak("Goodbye!")
                         break
                     
