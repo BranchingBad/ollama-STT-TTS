@@ -8,13 +8,6 @@ This script uses openwakeword for wakeword detection, webrtcvad for silence
 detection, OpenAI's Whisper for transcription, and Ollama for generative AI
 responses.
 
-Refactored into a class-based structure for improved state management
-and to fix critical bugs.
-
-Improvements:
-- Integrated Python's `logging` module.
-- Added type hinting.
-- Made pre-speech buffer configurable via CLI.
 """
 
 import ollama
@@ -80,7 +73,10 @@ class VoiceAssistant:
         self.stream: Optional[pyaudio.Stream] = None
         
         # Conversation history
-        self.messages: List[Dict[str, str]] = []
+        # --- ENHANCEMENT: Added a system prompt ---
+        self.messages: List[Dict[str, str]] = [
+            {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
+        ]
 
     def speak(self, text: str) -> None:
         """Speaks the given text using pyttsx3."""
@@ -253,9 +249,13 @@ class VoiceAssistant:
                             self.speak("Goodbye!")
                             break
                         
-                        if user_prompt == "new chat" or user_prompt == "reset chat":
+                        # --- ENHANCEMENT: More flexible command matching ---
+                        if "new chat" in user_prompt or "reset chat" in user_prompt:
                             self.speak("Starting a new conversation.")
-                            self.messages = [] # Clear history
+                            # Reset history, but keep the system prompt
+                            self.messages = [
+                                {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
+                            ]
                             logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                             self.stream.start_stream() # Restart for wakeword
                             continue
