@@ -94,4 +94,10 @@ You can stop the script at any time with Ctrl+C.
 
 ## 4. Configuration
 
-To change the Ollama model, simply edit the ollama.chat(model='llama3', ...) line in the get_ollama_response function in ``ollama_voice_chat.py.``
+You can easily change the core models and wakeword by editing the configuration variables at the top of the ``ollama_voice_chat.py`` script:
+
+Wakeword: To use a different wakeword, change the ``WAKEWORD`` and ``WAKEWORD_MODEL_NAME`` variables. You must use a model name supported by ``openwakeword``.
+
+Ollama Model: To change the LLM, edit the ``OLLAMA_MODEL`` variable (e.g., to ``"mistral"``, ``"phi3"``, etc.).
+
+Whisper Model: To change the transcription accuracy, edit the ``WHISPER_MODEL`` variable. Using a larger model (e.g., ``"small.en"``, ``"medium.en"``) will be more accurate but slower.
