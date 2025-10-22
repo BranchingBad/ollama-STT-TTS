@@ -28,55 +28,55 @@ You must have the Ollama application installed and running.
 ### B. Pull an Ollama Model
 
 You need at least one model downloaded for Ollama to use.
-
+```bash 
 #We recommend Llama 3
 ollama pull llama3
 
 #Or, use another model
 ollama pull mistral
-
+```
 
 ### C. System Dependencies
 
 The PyAudio library requires portaudio.
 
 On macOS (via Homebrew):
-
+```bash
 brew install portaudio
-
+```
 
 On Debian/Ubuntu Linux:
-
+```bash
 sudo apt-get install portaudio19-dev
-
+```
 
 ## 2. Installation
 
 Clone this repository to your local machine:
-
+```bash
 git clone [https://github.com/BranchingBad/ollama-STT-TTS.git](https://github.com/BranchingBad/ollama-STT-TTS.git)
 cd ollama-STT-TTS
-
+```
 
 (Recommended) Create a Python virtual environment:
-
+```bash
 python3 -m venv venv
 source venv/bin/activate
-
+```
 
 Install the required Python libraries using the requirements.txt file:
-
+```bash
 pip install -r requirements.txt
-
+```
 
 ## 3. Usage
 
 Make sure your Ollama application is running in the background.
 
 Run the main script:
-
+```bash
 python ollama_voice_chat.py
-
+```
 
 On the first run, the script will automatically download the Whisper (base.en) and openwakeword models.
 
