@@ -2,7 +2,7 @@
 
 This script lets you talk to an Ollama model using your voice and hear its responses. It runs in a hands-free mode, waiting for a "wakeword" before it starts listening for your command.
 
-How It Works
+## How It Works
 
 Wait: It uses precise-lite-client (from Mycroft) to listen for the "Hey Mycroft" wakeword.
 
@@ -14,11 +14,11 @@ Speak: It takes the text response from Ollama and uses the pyttsx3 library to co
 
 ## 1. Prerequisites (Must Do First!)
 
-A. Install Ollama
+### A. Install Ollama
 
 You must have the Ollama application installed and running on your computer.
 
-B. Pull an Ollama Model
+### B. Pull an Ollama Model
 
 You need at least one model downloaded. If you don't have one, run this in your terminal:
 
@@ -27,7 +27,7 @@ ollama pull llama3
 
 (You can replace llama3 with another model like mistral if you prefer).
 
-C. Install Python Libraries
+### C. Install Python Libraries
 
 Open your terminal and install the following Python libraries:
 
@@ -50,7 +50,7 @@ pip install PyAudio
 pip install precise-lite-client
 
 
-Note on Dependencies:
+### Note on Dependencies:
 
 On macOS or Linux, you may need to install portaudio first:
 
