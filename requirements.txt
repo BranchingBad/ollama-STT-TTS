@@ -3,5 +3,4 @@ openai-whisper==20250625
 pyttsx3>=2.99
 PyAudio>=0.2.13
 webrtcvad>=2.0.10
-openwakeword>=0.4.0
 numpy>=2.3.4

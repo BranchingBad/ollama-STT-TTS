@@ -70,7 +70,7 @@ class VoiceAssistant:
 
         # Wakeword Model
         logging.info(f"Loading openwakeword model: {args.wakeword_model}...")
-        self.oww_model = Model(wakeword_model_names=[args.wakeword_model])
+        self.oww_model = Model(wakeword_model_paths=[f"{args.wakeword_model}.onnx"])
 
         # Whisper Model
         logging.info(f"Loading Whisper model: {args.whisper_model}...")
@@ -404,7 +404,7 @@ def main() -> None:
     parser.add_argument('--wakeword-model', 
                         type=str, 
                         default='hey_mycroft_v0.1', 
-                        help='The openwakeword model to use (e.g., "hey_mycroft_v0.1")')
+                        help='The openwakeword model name (e.g., "hey_mycroft_v0.1"). Assumes the .onnx file is in the same directory.')
 
     # Functionality settings
     parser.add_argument('--wakeword', 
