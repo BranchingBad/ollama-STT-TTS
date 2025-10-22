@@ -11,6 +11,11 @@ responses.
 This updated version includes a non-blocking TTS system using a separate
 thread and queue, allowing the assistant to listen for the wakeword
 while speaking its response.
+
+--- MODIFICATION ---
+Includes threading.Event 'is_speaking_event' to prevent the assistant
+from listening to its own voice, which could cause false wakeword
+triggers.
 """
 
 import ollama
@@ -71,6 +76,10 @@ class VoiceAssistant:
         self.tts_engine = pyttsx3.init()
         self.tts_queue = queue.Queue()
         self.tts_stop_event = threading.Event()
+        
+        # --- ADDED: Event to signal when TTS is active ---
+        self.is_speaking_event = threading.Event()
+        
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
         self.tts_thread.start()
 
@@ -89,6 +98,7 @@ class VoiceAssistant:
 
     def _tts_worker(self) -> None:
         """Dedicated thread for processing TTS tasks."""
+        text = None # Ensure text is defined in finally block
         while not self.tts_stop_event.is_set():
             try:
                 # Wait for text to speak, with a timeout
@@ -96,7 +106,9 @@ class VoiceAssistant:
                 
                 if text is None: # Sentinel for stopping
                     break
-                    
+                
+                # --- MODIFIED: Set event before speaking ---
+                self.is_speaking_event.set()
                 self.tts_engine.say(text)
                 self.tts_engine.runAndWait()
                 
@@ -107,6 +119,10 @@ class VoiceAssistant:
             finally:
                 if text is not None:
                     self.tts_queue.task_done()
+                
+                # --- MODIFIED: Clear event after speaking (or error) ---
+                self.is_speaking_event.clear()
+
 
     def speak(self, text: str) -> None:
         """Adds text to the TTS queue to be spoken by the worker thread."""
@@ -245,87 +261,89 @@ class VoiceAssistant:
                     
                 # --- Wakeword Listening Loop ---
                 audio_chunk = self.stream.read(CHUNK_SIZE)
-                
-                audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
 
-                # Feed audio to openwakeword
-                prediction = self.oww_model.predict(audio_np_int16)
-                
-                # Check if the desired wakeword score is high
-                if prediction[self.args.wakeword_model] > self.args.wakeword_threshold:
-                    logging.info(f"Wakeword '{self.args.wakeword}' detected!")
+                # --- MODIFIED: Only process audio if TTS is not active ---
+                if not self.is_speaking_event.is_set():
+                    audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
+
+                    # Feed audio to openwakeword
+                    prediction = self.oww_model.predict(audio_np_int16)
                     
-                    self.stream.stop_stream()  # Stop listening
-                    
-                    # --- This call should BLOCK ---
-                    self.speak("Yes?")
-                    self.wait_for_speech()     # Wait for "Yes?" to finish
-                    
-                    self.stream.start_stream() # Start listening for command
-                    
-                    # --- Command Recording Loop ---
-                    audio_data = self.record_command()
-                    
-                    self.stream.stop_stream() # Stop while processing
-                    
-                    if audio_data is None:
+                    # Check if the desired wakeword score is high
+                    if prediction[self.args.wakeword_model] > self.args.wakeword_threshold:
+                        logging.info(f"Wakeword '{self.args.wakeword}' detected!")
+                        
+                        self.stream.stop_stream()  # Stop listening
+                        
                         # --- This call should BLOCK ---
-                        self.speak("I didn't hear anything.")
-                        self.wait_for_speech()
-
-                        logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
-                        self.stream.start_stream() # Restart for wakeword
-                        continue # Go back to listening for wakeword
-
-                    # --- Process the Command ---
-                    logging.info("Transcribing audio...")
-                    user_text = self.transcribe_audio(audio_data)
-                    
-                    if user_text:
-                        logging.info(f"You: {user_text}")
+                        self.speak("Yes?")
+                        self.wait_for_speech()     # Wait for "Yes?" to finish
                         
-                        # Clean up punctuation and check for commands
-                        user_prompt = user_text.lower().strip().rstrip(".,!?")
+                        self.stream.start_stream() # Start listening for command
                         
-                        if user_prompt.startswith("exit") or user_prompt.startswith("goodbye"):
+                        # --- Command Recording Loop ---
+                        audio_data = self.record_command()
+                        
+                        self.stream.stop_stream() # Stop while processing
+                        
+                        if audio_data is None:
                             # --- This call should BLOCK ---
-                            self.speak("Goodbye!")
+                            self.speak("I didn't hear anything.")
                             self.wait_for_speech()
-                            break
-                        
-                        # --- ENHANCEMENT: More flexible command matching ---
-                        if "new chat" in user_prompt or "reset chat" in user_prompt:
-                            # --- This call should BLOCK ---
-                            self.speak("Starting a new conversation.")
-                            self.wait_for_speech()
-                            
-                            # Reset history, but keep the system prompt
-                            self.messages = [
-                                {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
-                            ]
+
                             logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                             self.stream.start_stream() # Restart for wakeword
-                            continue
+                            continue # Go back to listening for wakeword
 
-                        # Get and speak the response
-                        logging.info(f"Sending to {self.args.ollama_model}...")
-                        ollama_reply = self.get_ollama_response(user_text)
+                        # --- Process the Command ---
+                        logging.info("Transcribing audio...")
+                        user_text = self.transcribe_audio(audio_data)
                         
-                        # --- This call is NON-BLOCKING ---
-                        self.speak(ollama_reply)
+                        if user_text:
+                            logging.info(f"You: {user_text}")
+                            
+                            # Clean up punctuation and check for commands
+                            user_prompt = user_text.lower().strip().rstrip(".,!?")
+                            
+                            if user_prompt.startswith("exit") or user_prompt.startswith("goodbye"):
+                                # --- This call should BLOCK ---
+                                self.speak("Goodbye!")
+                                self.wait_for_speech()
+                                break
+                            
+                            # --- ENHANCEMENT: More flexible command matching ---
+                            if "new chat" in user_prompt or "reset chat" in user_prompt:
+                                # --- This call should BLOCK ---
+                                self.speak("Starting a new conversation.")
+                                self.wait_for_speech()
+                                
+                                # Reset history, but keep the system prompt
+                                self.messages = [
+                                    {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
+                                ]
+                                logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+                                self.stream.start_stream() # Restart for wakeword
+                                continue
 
-                        # Block only if it was an error message
-                        if "I'm sorry" in ollama_reply:
+                            # Get and speak the response
+                            logging.info(f"Sending to {self.args.ollama_model}...")
+                            ollama_reply = self.get_ollama_response(user_text)
+                            
+                            # --- This call is NON-BLOCKING ---
+                            self.speak(ollama_reply)
+
+                            # Block only if it was an error message
+                            if "I'm sorry" in ollama_reply:
+                                self.wait_for_speech()
+
+                        else:
+                            # --- This call should BLOCK ---
+                            logging.warning("Transcription failed.")
+                            self.speak("I'm sorry, I didn't catch that.")
                             self.wait_for_speech()
-
-                    else:
-                        # --- This call should BLOCK ---
-                        logging.warning("Transcription failed.")
-                        self.speak("I'm sorry, I didn't catch that.")
-                        self.wait_for_speech()
-                    
-                    logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
-                    self.stream.start_stream() # Restart for wakeword
+                        
+                        logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+                        self.stream.start_stream() # Restart for wakeword
 
         except KeyboardInterrupt:
             logging.info("\nStopping assistant...")
