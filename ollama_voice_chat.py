@@ -10,6 +10,11 @@ responses.
 
 Refactored into a class-based structure for improved state management
 and to fix critical bugs.
+
+Improvements:
+- Integrated Python's `logging` module.
+- Added type hinting.
+- Made pre-speech buffer configurable via CLI.
 """
 
 import ollama
@@ -19,7 +24,10 @@ import pyaudio
 import numpy as np
 import webrtcvad
 import argparse
+import logging
 from openwakeword.model import Model
+from typing import List, Dict, Optional
+import numpy.typing as npt
 
 # --- 1. Audio Settings (Constants) ---
 # These are generally fixed based on hardware and model requirements
@@ -39,27 +47,26 @@ class VoiceAssistant:
     - Text-to-Speech (pyttsx3)
     """
     
-    def __init__(self, args):
+    def __init__(self, args: argparse.Namespace) -> None:
         """
         Initializes the assistant, loads models, and sets up audio.
         """
-        self.args = args
+        self.args: argparse.Namespace = args
         
         # Calculate derived audio settings
-        self.silence_chunks = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
-        self.pre_speech_timeout_chunks = int(args.listen_timeout * 1000 / CHUNK_DURATION_MS)
-        self.pre_buffer_size_ms = 500 # 0.5 seconds pre-buffer
-        self.pre_buffer_size_chunks = int(self.pre_buffer_size_ms / CHUNK_DURATION_MS)
+        self.silence_chunks: int = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
+        self.pre_speech_timeout_chunks: int = int(args.listen_timeout * 1000 / CHUNK_DURATION_MS)
+        self.pre_buffer_size_ms: int = args.pre_buffer_ms
+        self.pre_buffer_size_chunks: int = int(self.pre_buffer_size_ms / CHUNK_DURATION_MS)
 
-
-        print("Loading models...")
+        logging.info("Loading models...")
 
         # Wakeword Model
-        print(f"Loading openwakeword model: {args.wakeword_model}...")
+        logging.info(f"Loading openwakeword model: {args.wakeword_model}...")
         self.oww_model = Model(wakeword_models=[args.wakeword_model])
 
         # Whisper Model
-        print(f"Loading Whisper model: {args.whisper_model}...")
+        logging.info(f"Loading Whisper model: {args.whisper_model}...")
         self.whisper_model = whisper.load_model(args.whisper_model)
 
         # TTS Engine
@@ -70,28 +77,28 @@ class VoiceAssistant:
 
         # PyAudio
         self.audio = pyaudio.PyAudio()
-        self.stream = None # Stream will be opened in run()
+        self.stream: Optional[pyaudio.Stream] = None
         
         # Conversation history
-        self.messages = []
+        self.messages: List[Dict[str, str]] = []
 
-    def speak(self, text):
+    def speak(self, text: str) -> None:
         """Speaks the given text using pyttsx3."""
-        print(f"Assistant: {text}")
+        logging.info(f"Assistant: {text}")
         self.tts_engine.say(text)
         self.tts_engine.runAndWait()
 
-    def transcribe_audio(self, audio_np):
+    def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Transcribes audio data (NumPy array) using Whisper."""
         try:
             # Transcribe the NumPy array directly
             result = self.whisper_model.transcribe(audio_np)
-            return result['text']
+            return result.get('text', '')
         except Exception as e:
-            print(f"Whisper transcription error: {e}")
+            logging.error(f"Whisper transcription error: {e}")
             return ""
 
-    def get_ollama_response(self, text):
+    def get_ollama_response(self, text: str) -> str:
         """
         Gets a response from Ollama, maintaining conversation history.
         """
@@ -108,30 +115,34 @@ class VoiceAssistant:
             return assistant_reply
             
         except ollama.ResponseError as e:
-            print(f"Ollama Response Error: {e.error}")
+            logging.error(f"Ollama Response Error: {e.error}")
             return "I'm sorry, I received an error from Ollama. Please check the console."
         except Exception as e:
             # This often catches connection errors
-            print(f"Ollama error: {e}")
+            logging.error(f"Ollama error: {e}")
             return "I'm sorry, I couldn't connect to Ollama. Is the Ollama server running?"
 
-    def record_command(self):
+    def record_command(self) -> Optional[npt.NDArray[np.float32]]:
         """
         Records audio from the user until silence is detected.
         Uses a pre-buffer to catch the start of speech.
         Returns audio data as a 32-bit float NumPy array, or None if no speech is detected.
         """
-        print("Listening for command...")
-        frames = []
+        logging.info("Listening for command...")
+        frames: List[bytes] = []
         silent_chunks = 0
         is_speaking = False
         
         # Store a small buffer of audio *before* speech starts
-        pre_buffer = []
+        pre_buffer: List[bytes] = []
         timeout_chunks = self.pre_speech_timeout_chunks
 
         while True:
             try:
+                if not self.stream:
+                    logging.error("Audio stream is not open.")
+                    return None
+                    
                 data = self.stream.read(CHUNK_SIZE)
                 is_speech = self.vad.is_speech(data, RATE)
 
@@ -141,14 +152,14 @@ class VoiceAssistant:
                     if not is_speech:
                         silent_chunks += 1
                         if silent_chunks > self.silence_chunks:
-                            print("Silence detected, processing...")
+                            logging.info("Silence detected, processing...")
                             break
                     else:
                         silent_chunks = 0 # Reset silence counter
                 
                 elif is_speech:
                     # Speech has just started
-                    print("Speech detected...")
+                    logging.info("Speech detected...")
                     is_speaking = True
                     frames.extend(pre_buffer) # Add the pre-speech buffer
                     frames.append(data)
@@ -164,24 +175,24 @@ class VoiceAssistant:
                     # Check for timeout
                     timeout_chunks -= 1
                     if timeout_chunks <= 0:
-                        print("No speech detected, timing out.")
+                        logging.warning("No speech detected, timing out.")
                         return None
                         
             except IOError as e:
-                print(f"Error reading from audio stream: {e}")
+                logging.error(f"Error reading from audio stream: {e}")
                 return None
 
 
         # Combine all audio chunks
-        audio_data = b''.join(frames)
+        audio_data: bytes = b''.join(frames)
         
         # Convert raw 16-bit audio data to a 32-bit float NumPy array
         # This is the format Whisper expects
-        audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+        audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
         
         return audio_np
 
-    def run(self):
+    def run(self) -> None:
         """
         The main loop of the assistant. Listens for wakeword, then
         records, transcribes, and responds.
@@ -194,20 +205,24 @@ class VoiceAssistant:
                                           input=True,
                                           frames_per_buffer=CHUNK_SIZE)
             
-            print(f"\nReady! Listening for '{self.args.wakeword}'...")
+            logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
             
             while True:
+                if not self.stream:
+                    logging.error("Audio stream was unexpectedly closed.")
+                    break
+                    
                 # --- Wakeword Listening Loop ---
                 audio_chunk = self.stream.read(CHUNK_SIZE)
                 
-                audio_np = np.frombuffer(audio_chunk, dtype=np.int16)
+                audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
 
                 # Feed audio to openwakeword
-                prediction = self.oww_model.predict(audio_np)
+                prediction = self.oww_model.predict(audio_np_int16)
                 
                 # Check if the desired wakeword score is high
                 if prediction[self.args.wakeword_model] > self.args.wakeword_threshold:
-                    print(f"Wakeword '{self.args.wakeword}' detected!")
+                    logging.info(f"Wakeword '{self.args.wakeword}' detected!")
                     
                     self.stream.stop_stream()  # Stop listening
                     self.speak("Yes?")         # Speak
@@ -220,16 +235,16 @@ class VoiceAssistant:
                     
                     if audio_data is None:
                         self.speak("I didn't hear anything.")
-                        print(f"\nReady! Listening for '{self.args.wakeword}'...")
+                        logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                         self.stream.start_stream() # Restart for wakeword
                         continue # Go back to listening for wakeword
 
                     # --- Process the Command ---
-                    print("Transcribing audio...")
+                    logging.info("Transcribing audio...")
                     user_text = self.transcribe_audio(audio_data)
                     
                     if user_text:
-                        print(f"You: {user_text}")
+                        logging.info(f"You: {user_text}")
                         
                         # Clean up punctuation and check for commands
                         user_prompt = user_text.lower().strip().rstrip(".,!?")
@@ -241,38 +256,44 @@ class VoiceAssistant:
                         if user_prompt == "new chat" or user_prompt == "reset chat":
                             self.speak("Starting a new conversation.")
                             self.messages = [] # Clear history
-                            print(f"\nReady! Listening for '{self.args.wakeword}'...")
+                            logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                             self.stream.start_stream() # Restart for wakeword
                             continue
 
                         # Get and speak the response
-                        print(f"Sending to {self.args.ollama_model}...")
+                        logging.info(f"Sending to {self.args.ollama_model}...")
                         ollama_reply = self.get_ollama_response(user_text)
                         self.speak(ollama_reply)
                     else:
-                        self.speak("I'm sorry, I didn't catch that.")
+                        logging.warning("I'm sorry, I didn't catch that.")
                     
-                    print(f"\nReady! Listening for '{self.args.wakeword}'...")
+                    logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                     self.stream.start_stream() # Restart for wakeword
 
         except KeyboardInterrupt:
-            print("\nStopping assistant...")
+            logging.info("\nStopping assistant...")
         finally:
             if self.stream:
                 self.stream.stop_stream()
                 self.stream.close()
             self.cleanup()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Cleans up PyAudio resource."""
-        print("Cleaning up resources...")
+        logging.info("Cleaning up resources...")
         if self.audio:
             self.audio.terminate()
 
-def main():
+def main() -> None:
     """
     Parses arguments and runs the VoiceAssistant.
     """
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO, 
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
     parser = argparse.ArgumentParser(description="Ollama STT-TTS Voice Assistant")
 
     # Model settings
@@ -311,6 +332,11 @@ def main():
                         type=float,
                         default=5.0,
                         help='Seconds to wait for speech to start before timing out.')
+    # --- New Argument ---
+    parser.add_argument('--pre-buffer-ms',
+                        type=int,
+                        default=500,
+                        help='Milliseconds of audio to pre-buffer before speech is detected (default: 500).')
     
     args = parser.parse_args()
 
@@ -318,11 +344,11 @@ def main():
         assistant = VoiceAssistant(args)
         assistant.run()
     except IOError as e:
-        print(f"FATAL ERROR: Could not open audio stream.")
-        print("Please check if a microphone is connected and permissions are correct.")
-        print(f"Details: {e}")
+        logging.critical("FATAL ERROR: Could not open audio stream.")
+        logging.critical("Please check if a microphone is connected and permissions are correct.")
+        logging.critical(f"Details: {e}")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        logging.critical(f"An unexpected error occurred: {e}", exc_info=True)
 
 # --- Script Entry Point ---
 if __name__ == "__main__":
