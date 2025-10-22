@@ -1,0 +1,6 @@
+ollama
+pyttsx3
+SpeechRecognition
+openai-whisper
+PyAudio
+precise-lite-client
