@@ -4,28 +4,21 @@ import pyttsx3
 import pyaudio
 import numpy as np
 import webrtcvad
-import argparse  # Import argparse for command-line arguments
+import argparse
+from openwakeword.model import Model
 
-# --- 1. Configuration ---
-
-# Wakeword settings
-WAKEWORD = "hey mycroft"  # The phrase to listen for
-WAKEWORD_MODEL_NAME = "hey_mycroft_v0.1" # A pre-trained model from openwakeword
-
-# Audio settings (must match for VAD and Whisper)
+# --- 1. Audio Settings (Constants) ---
+# These are generally fixed based on hardware and model requirements
 FORMAT = pyaudio.paInt16       # 16-bit audio
 CHANNELS = 1                 # Mono
 RATE = 16000                 # 16kHz sample rate
 CHUNK_DURATION_MS = 30       # 30ms chunks for VAD
-CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames
-VAD_AGGRESSIVENESS = 2       # 0 (least aggressive) to 3 (most aggressive)
-SILENCE_CHUNKS = 70          # Number of 30ms silent chunks to stop recording
-                             # (70 chunks * 30ms/chunk = 2100ms = 2.1 seconds of silence)
+CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames per chunk
 
 # --- 2. Command-Line Argument Parsing ---
-
-# Set up argument parser
 parser = argparse.ArgumentParser(description="Ollama STT-TTS Voice Assistant")
+
+# Model settings
 parser.add_argument('--ollama-model', 
                     type=str, 
                     default='llama3', 
@@ -34,15 +27,37 @@ parser.add_argument('--whisper-model',
                     type=str, 
                     default='base.en', 
                     help='The Whisper model to use (e.g., "tiny.en", "base.en", "small.en")')
+parser.add_argument('--wakeword-model', 
+                    type=str, 
+                    default='hey_mycroft_v0.1', 
+                    help='The openwakeword model to use (e.g., "hey_mycroft_v0.1")')
+
+# Functionality settings
+parser.add_argument('--wakeword', 
+                    type=str, 
+                    default='hey mycroft', 
+                    help='The wakeword phrase to listen for.')
+parser.add_argument('--vad-aggressiveness', 
+                    type=int, 
+                    default=2, 
+                    choices=[0, 1, 2, 3],
+                    help='VAD aggressiveness (0=least, 3=most aggressive).')
+parser.add_argument('--silence-seconds', 
+                    type=float, 
+                    default=2.0, 
+                    help='Seconds of silence to wait before stopping recording.')
+
 args = parser.parse_args()
 
+# Calculate the number of silent chunks needed based on the duration
+SILENCE_CHUNKS = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
 
 # --- 3. Initialization ---
 print("Loading models...")
 
 # Wakeword Model
-from openwakeword.model import Model
-oww_model = Model(wakeword_models=[WAKEWORD_MODEL_NAME])
+print(f"Loading openwakeword model: {args.wakeword_model}...")
+oww_model = Model(wakeword_models=[args.wakeword_model])
 
 # Whisper Model
 print(f"Loading Whisper model: {args.whisper_model}...")
@@ -52,7 +67,7 @@ whisper_model = whisper.load_model(args.whisper_model)
 tts_engine = pyttsx3.init()
 
 # VAD
-vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
+vad = webrtcvad.Vad(args.vad_aggressiveness)
 
 # PyAudio
 audio = pyaudio.PyAudio()
@@ -62,7 +77,7 @@ stream = audio.open(format=FORMAT,
                     input=True,
                     frames_per_buffer=CHUNK_SIZE)
 
-print(f"\nReady! Listening for '{WAKEWORD}'...")
+print(f"\nReady! Listening for '{args.wakeword}'...")
 
 # --- 4. Helper Functions ---
 
@@ -97,13 +112,13 @@ def get_ollama_response(text):
         print(f"Ollama error: {e}")
         return "I'm sorry, I couldn't connect to Ollama. Is the Ollama server running?"
 
-def record_command(first_chunk):
+def record_command():
     """
     Records audio from the user until silence is detected.
     Returns audio data as a 32-bit float NumPy array.
     """
     print("Listening for command...")
-    frames = [first_chunk]  # Start with the chunk that triggered the wakeword
+    frames = []  # Start with an empty list of frames
     silent_chunks = 0
     is_speaking = False
 
@@ -147,13 +162,13 @@ try:
         prediction = oww_model.predict(audio_chunk)
         
         # Check if the desired wakeword score is high
-        if prediction[WAKEWORD_MODEL_NAME] > 0.5: # 0.5 is the threshold
-            print(f"Wakeword '{WAKEWORD}' detected!")
+        if prediction[args.wakeword_model] > 0.5: # 0.5 is the threshold
+            print(f"Wakeword '{args.wakeword}' detected!")
             speak("Yes?")
             
             # --- Command Recording Loop ---
-            # Pass the triggering chunk to start the recording
-            audio_data = record_command(audio_chunk)
+            # Record audio *after* the wakeword
+            audio_data = record_command()
             
             # --- Process the Command ---
             user_text = transcribe_audio(audio_data)
@@ -174,7 +189,7 @@ try:
             else:
                 speak("I'm sorry, I didn't catch that.")
             
-            print(f"\nReady! Listening for '{WAKEWORD}'...")
+            print(f"\nReady! Listening for '{args.wakeword}'...")
 
 except KeyboardInterrupt:
     print("\nStopping assistant...")
