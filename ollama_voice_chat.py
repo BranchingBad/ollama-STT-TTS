@@ -8,6 +8,9 @@ This script uses openwakeword for wakeword detection, webrtcvad for silence
 detection, OpenAI's Whisper for transcription, and Ollama for generative AI
 responses.
 
+This updated version includes a non-blocking TTS system using a separate
+thread and queue, allowing the assistant to listen for the wakeword
+while speaking its response.
 """
 
 import ollama
@@ -18,6 +21,8 @@ import numpy as np
 import webrtcvad
 import argparse
 import logging
+import threading
+import queue
 from openwakeword.model import Model
 from typing import List, Dict, Optional
 import numpy.typing as npt
@@ -37,7 +42,7 @@ class VoiceAssistant:
     - Wakeword detection (openwakeword)
     - Speech-to-Text (Whisper)
     - Language Model (Ollama)
-    - Text-to-Speech (pyttsx3)
+    - Text-to-Speech (pyttsx3 in a separate thread)
     """
     
     def __init__(self, args: argparse.Namespace) -> None:
@@ -64,6 +69,10 @@ class VoiceAssistant:
 
         # TTS Engine
         self.tts_engine = pyttsx3.init()
+        self.tts_queue = queue.Queue()
+        self.tts_stop_event = threading.Event()
+        self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
+        self.tts_thread.start()
 
         # VAD
         self.vad = webrtcvad.Vad(args.vad_aggressiveness)
@@ -78,11 +87,37 @@ class VoiceAssistant:
             {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
         ]
 
+    def _tts_worker(self) -> None:
+        """Dedicated thread for processing TTS tasks."""
+        while not self.tts_stop_event.is_set():
+            try:
+                # Wait for text to speak, with a timeout
+                text = self.tts_queue.get(timeout=1.0)
+                
+                if text is None: # Sentinel for stopping
+                    break
+                    
+                self.tts_engine.say(text)
+                self.tts_engine.runAndWait()
+                
+            except queue.Empty:
+                continue # Just loop again if queue is empty
+            except Exception as e:
+                logging.error(f"TTS worker error: {e}")
+            finally:
+                if text is not None:
+                    self.tts_queue.task_done()
+
     def speak(self, text: str) -> None:
-        """Speaks the given text using pyttsx3."""
+        """Adds text to the TTS queue to be spoken by the worker thread."""
         logging.info(f"Assistant: {text}")
-        self.tts_engine.say(text)
-        self.tts_engine.runAndWait()
+        self.tts_queue.put(text)
+
+    def wait_for_speech(self) -> None:
+        """Blocks until the TTS queue is empty and all speech is finished."""
+        logging.info("Waiting for speech to finish...")
+        self.tts_queue.join()
+        logging.info("Speech finished.")
 
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Transcribes audio data (NumPy array) using Whisper."""
@@ -221,7 +256,11 @@ class VoiceAssistant:
                     logging.info(f"Wakeword '{self.args.wakeword}' detected!")
                     
                     self.stream.stop_stream()  # Stop listening
-                    self.speak("Yes?")         # Speak
+                    
+                    # --- This call should BLOCK ---
+                    self.speak("Yes?")
+                    self.wait_for_speech()     # Wait for "Yes?" to finish
+                    
                     self.stream.start_stream() # Start listening for command
                     
                     # --- Command Recording Loop ---
@@ -230,7 +269,10 @@ class VoiceAssistant:
                     self.stream.stop_stream() # Stop while processing
                     
                     if audio_data is None:
+                        # --- This call should BLOCK ---
                         self.speak("I didn't hear anything.")
+                        self.wait_for_speech()
+
                         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                         self.stream.start_stream() # Restart for wakeword
                         continue # Go back to listening for wakeword
@@ -246,12 +288,17 @@ class VoiceAssistant:
                         user_prompt = user_text.lower().strip().rstrip(".,!?")
                         
                         if user_prompt.startswith("exit") or user_prompt.startswith("goodbye"):
+                            # --- This call should BLOCK ---
                             self.speak("Goodbye!")
+                            self.wait_for_speech()
                             break
                         
                         # --- ENHANCEMENT: More flexible command matching ---
                         if "new chat" in user_prompt or "reset chat" in user_prompt:
+                            # --- This call should BLOCK ---
                             self.speak("Starting a new conversation.")
+                            self.wait_for_speech()
+                            
                             # Reset history, but keep the system prompt
                             self.messages = [
                                 {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
@@ -263,9 +310,19 @@ class VoiceAssistant:
                         # Get and speak the response
                         logging.info(f"Sending to {self.args.ollama_model}...")
                         ollama_reply = self.get_ollama_response(user_text)
+                        
+                        # --- This call is NON-BLOCKING ---
                         self.speak(ollama_reply)
+
+                        # Block only if it was an error message
+                        if "I'm sorry" in ollama_reply:
+                            self.wait_for_speech()
+
                     else:
-                        logging.warning("I'm sorry, I didn't catch that.")
+                        # --- This call should BLOCK ---
+                        logging.warning("Transcription failed.")
+                        self.speak("I'm sorry, I didn't catch that.")
+                        self.wait_for_speech()
                     
                     logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                     self.stream.start_stream() # Restart for wakeword
@@ -279,8 +336,15 @@ class VoiceAssistant:
             self.cleanup()
 
     def cleanup(self) -> None:
-        """Cleans up PyAudio resource."""
+        """Cleans up PyAudio and stops the TTS thread."""
         logging.info("Cleaning up resources...")
+        
+        # Signal TTS thread to stop
+        self.tts_stop_event.set()
+        self.tts_queue.put(None) # Add sentinel value to unblock queue.get()
+        if hasattr(self, 'tts_thread') and self.tts_thread.is_alive():
+            self.tts_thread.join(timeout=2.0) # Wait for thread to finish
+            
         if self.audio:
             self.audio.terminate()
 
