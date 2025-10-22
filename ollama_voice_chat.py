@@ -70,7 +70,7 @@ class VoiceAssistant:
 
         # Wakeword Model
         logging.info(f"Loading openwakeword model: {args.wakeword_model}...")
-        self.oww_model = Model(wakeword_models=[args.wakeword_model])
+        self.oww_model = Model(wakeword_model_names=[args.wakeword_model])
 
         # Whisper Model
         logging.info(f"Loading Whisper model: {args.whisper_model}...")
