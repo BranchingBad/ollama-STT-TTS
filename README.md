@@ -7,19 +7,15 @@ A simple, hands-free Python voice assistant that runs 100% locally. This script 
 The assistant operates in a continuous loop with the following flow:
 
 [Microphone] ➡️ [openwakeword] ➡️ [webrtcvad] ➡️ [Whisper STT] ➡️ [Ollama LLM] ➡️ [pyttsx3 TTS] ➡️ [Speaker]
+
 (Listens for "hey ollama") (Records until silence) (Transcribes audio) (Generates response) (Speaks response)
 
 ## Features
-
-100% Local: No cloud services are required for STT, TTS, or the LLM.
-
-Hands-Free: Uses openwakeword for wakeword detection.
-
-Smart Recording: Uses webrtcvad (Voice Activity Detection) to automatically stop recording when you finish speaking.
-
-High-Quality Transcription: Leverages OpenAI's Whisper model for accurate speech-to-text.
-
-Flexible LLM: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
+- **100% Local**: No cloud services are required for STT, TTS, or the LLM.
+- **Hands-Free**: Uses openwakeword for wakeword detection.
+- **Smart Recording**: Uses webrtcvad (Voice Activity Detection) to automatically stop recording when you finish speaking.
+- **High-Quality Transcription**: Leverages OpenAI's Whisper model for accurate speech-to-text.
+- **Flexible LLM**: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
 
 ## 1. Prerequisites
 
