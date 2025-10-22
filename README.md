@@ -2,9 +2,9 @@
 
 This script lets you talk to an Ollama model using your voice and hear its responses. It runs in a hands-free mode, waiting for a "wakeword" before it starts listening for your command.
 
-## How It Works
+How It Works
 
-Wait: It uses pvporcupine to listen for a wakeword (e.g., "Picovoice", "Hey Computer").
+Wait: It uses precise-lite-client (from Mycroft) to listen for the "Hey Mycroft" wakeword.
 
 Listen: When the wakeword is detected, it uses the SpeechRecognition library (with OpenAI's Whisper model locally) to capture audio from your microphone and convert it to text.
 
@@ -27,19 +27,7 @@ ollama pull llama3
 
 (You can replace llama3 with another model like mistral if you prefer).
 
-C. Get a Porcupine Access Key
-
-The wakeword engine requires a free Access Key from Picovoice.
-
-Go to the Picovoice Console.
-
-Sign up for a free account.
-
-On the main page, you will see your AccessKey. Copy this long string.
-
-You will need to paste this key into the ollama_voice_chat.py script.
-
-D. Install Python Libraries
+C. Install Python Libraries
 
 Open your terminal and install the following Python libraries:
 
@@ -59,7 +47,7 @@ pip install openai-whisper
 pip install PyAudio
 
 # For wakeword detection
-pip install pvporcupine
+pip install precise-lite-client
 
 
 Note on Dependencies:
@@ -74,8 +62,6 @@ Linux: sudo apt-get install portaudio19-dev
 
 Save the ollama_voice_chat.py file.
 
-IMPORTANT: Open the .py file and paste your AccessKey from Step 1C into the PORCUPINE_ACCESS_KEY variable.
-
 Make sure your Ollama application is running.
 
 Run the script from your terminal:
@@ -83,11 +69,11 @@ Run the script from your terminal:
 python ollama_voice_chat.py
 
 
-The first time you run it, Whisper will download its 'base' model (a one-time download).
+The first time you run it, both the Whisper model and the "Hey Mycroft" wakeword model will be downloaded.
 
-You will see "Listening for wakeword ('picovoice')...".
+You will see "Listening for wakeword ('hey mycroft')...".
 
-Say "Picovoice".
+Say "Hey Mycroft".
 
 The script will say "Yes?" and you will see "Listening...". Now, say your command.
 
