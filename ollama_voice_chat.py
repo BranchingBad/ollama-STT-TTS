@@ -37,6 +37,10 @@ parser.add_argument('--wakeword',
                     type=str, 
                     default='hey mycroft', 
                     help='The wakeword phrase to listen for.')
+parser.add_argument('--wakeword-threshold', 
+                    type=float, 
+                    default=0.5, 
+                    help='Wakeword detection sensitivity (0.0 to 1.0).')
 parser.add_argument('--vad-aggressiveness', 
                     type=int, 
                     default=2, 
@@ -47,37 +51,19 @@ parser.add_argument('--silence-seconds',
                     default=2.0, 
                     help='Seconds of silence to wait before stopping recording.')
 
-args = parser.parse_args()
+# Global args (will be populated in main)
+args = None
+SILENCE_CHUNKS = None
 
-# Calculate the number of silent chunks needed based on the duration
-SILENCE_CHUNKS = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
+# --- 3. Global Initialization (Models and Services) ---
+# These are loaded once and accessed by helper functions
+oww_model = None
+whisper_model = None
+tts_engine = None
+vad = None
+audio = None
+stream = None
 
-# --- 3. Initialization ---
-print("Loading models...")
-
-# Wakeword Model
-print(f"Loading openwakeword model: {args.wakeword_model}...")
-oww_model = Model(wakeword_models=[args.wakeword_model])
-
-# Whisper Model
-print(f"Loading Whisper model: {args.whisper_model}...")
-whisper_model = whisper.load_model(args.whisper_model)
-
-# TTS Engine
-tts_engine = pyttsx3.init()
-
-# VAD
-vad = webrtcvad.Vad(args.vad_aggressiveness)
-
-# PyAudio
-audio = pyaudio.PyAudio()
-stream = audio.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    input=True,
-                    frames_per_buffer=CHUNK_SIZE)
-
-print(f"\nReady! Listening for '{args.wakeword}'...")
 
 # --- 4. Helper Functions ---
 
@@ -112,13 +98,14 @@ def get_ollama_response(text):
         print(f"Ollama error: {e}")
         return "I'm sorry, I couldn't connect to Ollama. Is the Ollama server running?"
 
-def record_command():
+def record_command(initial_chunk):
     """
     Records audio from the user until silence is detected.
+    Starts with the initial chunk that triggered the wakeword.
     Returns audio data as a 32-bit float NumPy array.
     """
     print("Listening for command...")
-    frames = []  # Start with an empty list of frames
+    frames = [initial_chunk]  # Start with the chunk that triggered the wakeword
     silent_chunks = 0
     is_speaking = False
 
@@ -153,48 +140,93 @@ def record_command():
     return audio_np
 
 # --- 5. Main Loop ---
-try:
-    while True:
-        # --- Wakeword Listening Loop ---
-        audio_chunk = stream.read(CHUNK_SIZE)
-        
-        # Feed audio to openwakeword
-        prediction = oww_model.predict(audio_chunk)
-        
-        # Check if the desired wakeword score is high
-        if prediction[args.wakeword_model] > 0.5: # 0.5 is the threshold
-            print(f"Wakeword '{args.wakeword}' detected!")
-            speak("Yes?")
-            
-            # --- Command Recording Loop ---
-            # Record audio *after* the wakeword
-            audio_data = record_command()
-            
-            # --- Process the Command ---
-            user_text = transcribe_audio(audio_data)
-            
-            if user_text:
-                print(f"You: {user_text}")
-                
-                # Check for exit commands
-                user_prompt = user_text.lower().strip()
-                # Check for exact matches, allowing for punctuation
-                if user_prompt in ["exit", "exit.", "goodbye", "goodbye."]:
-                    speak("Goodbye!")
-                    break
-                
-                # Get and speak the response
-                ollama_reply = get_ollama_response(user_text)
-                speak(ollama_reply)
-            else:
-                speak("I'm sorry, I didn't catch that.")
-            
-            print(f"\nReady! Listening for '{args.wakeword}'...")
+def main():
+    # Make globals accessible
+    global args, SILENCE_CHUNKS
+    global oww_model, whisper_model, tts_engine, vad, audio, stream
 
-except KeyboardInterrupt:
-    print("\nStopping assistant...")
-finally:
-    # --- 6. Cleanup ---
-    stream.stop_stream()
-    stream.close()
-    audio.terminate()
+    args = parser.parse_args()
+    
+    # Calculate the number of silent chunks needed based on the duration
+    SILENCE_CHUNKS = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
+
+    # --- Initialization ---
+    print("Loading models...")
+
+    # Wakeword Model
+    print(f"Loading openwakeword model: {args.wakeword_model}...")
+    oww_model = Model(wakeword_models=[args.wakeword_model])
+
+    # Whisper Model
+    print(f"Loading Whisper model: {args.whisper_model}...")
+    whisper_model = whisper.load_model(args.whisper_model)
+
+    # TTS Engine
+    tts_engine = pyttsx3.init()
+
+    # VAD
+    vad = webrtcvad.Vad(args.vad_aggressiveness)
+
+    # PyAudio
+    audio = pyaudio.PyAudio()
+    stream = audio.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK_SIZE)
+
+    print(f"\nReady! Listening for '{args.wakeword}'...")
+
+    try:
+        while True:
+            # --- Wakeword Listening Loop ---
+            audio_chunk = stream.read(CHUNK_SIZE)
+            
+            # Feed audio to openwakeword
+            prediction = oww_model.predict(audio_chunk)
+            
+            # Check if the desired wakeword score is high
+            if prediction[args.wakeword_model] > args.wakeword_threshold:
+                print(f"Wakeword '{args.wakeword}' detected!")
+                speak("Yes?")
+                
+                # --- Command Recording Loop ---
+                # Record audio *after* the wakeword (and include the trigger chunk)
+                audio_data = record_command(audio_chunk)
+                
+                # --- Process the Command ---
+                print("Transcribing audio...")
+                user_text = transcribe_audio(audio_data)
+                
+                if user_text:
+                    print(f"You: {user_text}")
+                    
+                    # Check for exit commands
+                    user_prompt = user_text.lower().strip()
+                    # Check for exact matches, allowing for punctuation
+                    if user_prompt in ["exit", "exit.", "goodbye", "goodbye."]:
+                        speak("Goodbye!")
+                        break
+                    
+                    # Get and speak the response
+                    print(f"Sending to {args.ollama_model}...")
+                    ollama_reply = get_ollama_response(user_text)
+                    speak(ollama_reply)
+                else:
+                    speak("I'm sorry, I didn't catch that.")
+                
+                print(f"\nReady! Listening for '{args.wakeword}'...")
+
+    except KeyboardInterrupt:
+        print("\nStopping assistant...")
+    finally:
+        # --- 6. Cleanup ---
+        if stream:
+            stream.stop_stream()
+            stream.close()
+        if audio:
+            audio.terminate()
+
+# --- 7. Script Entry Point ---
+if __name__ == "__main__":
+    main()
