@@ -49,15 +49,15 @@ class VoiceAssistant:
     - Language Model (Ollama)
     - Text-to-Speech (pyttsx3 in a separate thread)
     """
-    
+
     SYSTEM_PROMPT = 'You are a helpful, concise voice assistant.'
-    
+
     def __init__(self, args: argparse.Namespace) -> None:
         """
         Initializes the assistant, loads models, and sets up audio.
         """
         self.args: argparse.Namespace = args
-        
+
         # Calculate derived audio settings
         self.silence_chunks: int = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
         self.pre_speech_timeout_chunks: int = int(args.listen_timeout * 1000 / CHUNK_DURATION_MS)
@@ -79,10 +79,10 @@ class VoiceAssistant:
         self.tts_engine = pyttsx3.init()
         self.tts_queue = queue.Queue()
         self.tts_stop_event = threading.Event()
-        
+
         # Event to signal when TTS is active
         self.is_speaking_event = threading.Event()
-        
+
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
         self.tts_thread.start()
 
@@ -92,7 +92,7 @@ class VoiceAssistant:
         # PyAudio
         self.audio = pyaudio.PyAudio()
         self.stream: Optional[pyaudio.Stream] = None
-        
+
         # Conversation history
         self.messages: List[Dict[str, str]] = [
             {'role': 'system', 'content': self.SYSTEM_PROMPT}
@@ -105,15 +105,15 @@ class VoiceAssistant:
             try:
                 # Wait for text to speak, with a timeout
                 text = self.tts_queue.get(timeout=1.0)
-                
+
                 if text is None: # Sentinel for stopping
                     break
-                
+
                 # Set event before speaking
                 self.is_speaking_event.set()
                 self.tts_engine.say(text)
                 self.tts_engine.runAndWait()
-                
+
             except queue.Empty:
                 continue # Just loop again if queue is empty
             except Exception as e:
@@ -121,7 +121,7 @@ class VoiceAssistant:
             finally:
                 if text is not None:
                     self.tts_queue.task_done()
-                
+
                 # Clear event after speaking (or error)
                 self.is_speaking_event.clear()
 
@@ -153,16 +153,16 @@ class VoiceAssistant:
         """
         # Append the new user message
         self.messages.append({'role': 'user', 'content': text})
-        
+
         try:
             response = ollama.chat(model=self.args.ollama_model, messages=self.messages)
-            
+
             # Append the assistant's response
             assistant_reply = response['message']['content']
             self.messages.append({'role': 'assistant', 'content': assistant_reply})
-            
+
             return assistant_reply
-            
+
         except ollama.ResponseError as e:
             logging.error(f"Ollama Response Error: {e.error}")
             return "I'm sorry, I received an error from Ollama. Please check the console."
@@ -181,7 +181,7 @@ class VoiceAssistant:
         frames: List[bytes] = []
         silent_chunks = 0
         is_speaking = False
-        
+
         # Store a small buffer of audio *before* speech starts
         pre_buffer: List[bytes] = []
         timeout_chunks = self.pre_speech_timeout_chunks
@@ -191,7 +191,7 @@ class VoiceAssistant:
                 if not self.stream:
                     logging.error("Audio stream is not open.")
                     return None
-                    
+
                 data = self.stream.read(CHUNK_SIZE)
                 is_speech = self.vad.is_speech(data, RATE)
 
@@ -205,7 +205,7 @@ class VoiceAssistant:
                             break
                     else:
                         silent_chunks = 0 # Reset silence counter
-                
+
                 elif is_speech:
                     # Speech has just started
                     logging.info("Speech detected...")
@@ -213,20 +213,20 @@ class VoiceAssistant:
                     frames.extend(pre_buffer) # Add the pre-speech buffer
                     frames.append(data)
                     pre_buffer.clear()
-                
-                else: 
+
+                else:
                     # User is not speaking, and speech hasn't started
                     # Add to pre-buffer and keep it at size
                     pre_buffer.append(data)
                     if len(pre_buffer) > self.pre_buffer_size_chunks:
                         pre_buffer.pop(0)
-                    
+
                     # Check for timeout
                     timeout_chunks -= 1
                     if timeout_chunks <= 0:
                         logging.warning("No speech detected, timing out.")
                         return None
-                        
+
             except IOError as e:
                 logging.error(f"Error reading from audio stream: {e}")
                 return None
@@ -234,11 +234,11 @@ class VoiceAssistant:
 
         # Combine all audio chunks
         audio_data: bytes = b''.join(frames)
-        
+
         # Convert raw 16-bit audio data to a 32-bit float NumPy array
         # This is the format Whisper expects
         audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-        
+
         return audio_np
 
     def run(self) -> None:
@@ -253,14 +253,14 @@ class VoiceAssistant:
                                           rate=RATE,
                                           input=True,
                                           frames_per_buffer=CHUNK_SIZE)
-            
+
             logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
-            
+
             while True:
                 if not self.stream:
                     logging.error("Audio stream was unexpectedly closed.")
                     break
-                
+
                 try:
                     # Added IOError handling to the main read loop
                     audio_chunk = self.stream.read(CHUNK_SIZE)
@@ -275,24 +275,24 @@ class VoiceAssistant:
 
                     # Feed audio to openwakeword
                     prediction = self.oww_model.predict(audio_np_int16)
-                    
+
                     # Check if the desired wakeword score is high
                     if prediction[self.args.wakeword_model] > self.args.wakeword_threshold:
                         logging.info(f"Wakeword '{self.args.wakeword}' detected!")
-                        
+
                         self.stream.stop_stream()  # Stop listening
-                        
+
                         # This call should BLOCK
                         self.speak("Yes?")
                         self.wait_for_speech()     # Wait for "Yes?" to finish
-                        
+
                         self.stream.start_stream() # Start listening for command
-                        
+
                         # Command Recording Loop
                         audio_data = self.record_command()
-                        
+
                         self.stream.stop_stream() # Stop while processing
-                        
+
                         if audio_data is None:
                             # This call should BLOCK
                             self.speak("I didn't hear anything.")
@@ -305,26 +305,26 @@ class VoiceAssistant:
                         # Process the Command
                         logging.info("Transcribing audio...")
                         user_text = self.transcribe_audio(audio_data)
-                        
+
                         if user_text:
                             logging.info(f"You: {user_text}")
-                            
+
                             # Clean up punctuation and check for commands
                             user_prompt = user_text.lower().strip().rstrip(".,!?")
-                            
+
                             # Changed from startswith() to 'in' for flexibility
                             if "exit" in user_prompt or "goodbye" in user_prompt:
                                 # This call should BLOCK
                                 self.speak("Goodbye!")
                                 self.wait_for_speech()
                                 break
-                            
+
                             # More flexible command matching
                             if "new chat" in user_prompt or "reset chat" in user_prompt:
                                 # This call should BLOCK
                                 self.speak("Starting a new conversation.")
                                 self.wait_for_speech()
-                                
+
                                 # Reset history, but keep the system prompt
                                 self.messages = [
                                     {'role': 'system', 'content': self.SYSTEM_PROMPT}
@@ -336,7 +336,7 @@ class VoiceAssistant:
                             # Get and speak the response
                             logging.info(f"Sending to {self.args.ollama_model}...")
                             ollama_reply = self.get_ollama_response(user_text)
-                            
+
                             # This call is NON-BLOCKING
                             self.speak(ollama_reply)
 
@@ -349,7 +349,7 @@ class VoiceAssistant:
                             logging.warning("Transcription failed.")
                             self.speak("I'm sorry, I didn't catch that.")
                             self.wait_for_speech()
-                        
+
                         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                         self.stream.start_stream() # Restart for wakeword
 
@@ -364,13 +364,13 @@ class VoiceAssistant:
     def cleanup(self) -> None:
         """Cleans up PyAudio and stops the TTS thread."""
         logging.info("Cleaning up resources...")
-        
+
         # Signal TTS thread to stop
         self.tts_stop_event.set()
         self.tts_queue.put(None) # Add sentinel value to unblock queue.get()
         if hasattr(self, 'tts_thread') and self.tts_thread.is_alive():
             self.tts_thread.join(timeout=2.0) # Wait for thread to finish
-            
+
         if self.audio:
             self.audio.terminate()
 
@@ -380,7 +380,7 @@ def main() -> None:
     """
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO, 
+        level=logging.INFO,
         # --- FIX: Corrected format string from %(messages)s to %(message)s ---
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
@@ -388,36 +388,36 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ollama STT-TTS Voice Assistant")
 
     # Model settings
-    parser.add_argument('--ollama-model', 
-                        type=str, 
-                        default='llama3', 
+    parser.add_argument('--ollama-model',
+                        type=str,
+                        default='phi3',
                         help='The Ollama model to use (e.g., "llama3", "mistral", "phi3")')
-    parser.add_argument('--whisper-model', 
-                        type=str, 
-                        default='base.en', 
+    parser.add_argument('--whisper-model',
+                        type=str,
+                        default='tiny.en',
                         help='The Whisper model to use (e.g., "tiny.en", "base.en", "small.en")')
-    parser.add_argument('--wakeword-model', 
-                        type=str, 
-                        default='hey_mycroft_v0.1', 
+    parser.add_argument('--wakeword-model',
+                        type=str,
+                        default='hey_glados', # Updated default
                         help='The openwakeword model name (e.g., "hey_mycroft_v0.1"). Assumes the .onnx file is in the same directory.')
 
     # Functionality settings
-    parser.add_argument('--wakeword', 
-                        type=str, 
-                        default='hey mycroft', 
+    parser.add_argument('--wakeword',
+                        type=str,
+                        default='hey glados', # Updated default
                         help='The wakeword phrase to listen for.')
-    parser.add_argument('--wakeword-threshold', 
-                        type=float, 
-                        default=0.5, 
+    parser.add_argument('--wakeword-threshold',
+                        type=float,
+                        default=0.5,
                         help='Wakeword detection sensitivity (0.0 to 1.0).')
-    parser.add_argument('--vad-aggressiveness', 
-                        type=int, 
-                        default=2, 
+    parser.add_argument('--vad-aggressiveness',
+                        type=int,
+                        default=3,
                         choices=[0, 1, 2, 3],
                         help='VAD aggressiveness (0=least, 3=most aggressive).')
-    parser.add_argument('--silence-seconds', 
-                        type=float, 
-                        default=2.0, 
+    parser.add_argument('--silence-seconds',
+                        type=float,
+                        default=0.5,
                         help='Seconds of silence to wait before stopping recording.')
     parser.add_argument('--listen-timeout',
                         type=float,
@@ -427,7 +427,7 @@ def main() -> None:
                         type=int,
                         default=500,
                         help='Milliseconds of audio to pre-buffer before speech is detected (default: 500).')
-    
+
     args = parser.parse_args()
 
     try:
