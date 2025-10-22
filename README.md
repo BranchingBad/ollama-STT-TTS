@@ -116,7 +116,7 @@ python ollama_voice_chat.py
 ```
 Example: Run with different models and settings:
 ```Bash
-python ollama_voice_chat.py --ollama-model mistral --whisper-model small.en --wakeword "hey computer"
+python ollama_voice_chat.py --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 3 --silence-seconds 1.0
 ```
 
 All Arguments
