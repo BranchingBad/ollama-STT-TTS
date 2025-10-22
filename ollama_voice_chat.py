@@ -4,19 +4,13 @@ import pyttsx3
 import pyaudio
 import numpy as np
 import webrtcvad
-import wave
-import tempfile
-import os
-from openwakeword.model import Model
+import argparse  # Import argparse for command-line arguments
 
 # --- 1. Configuration ---
-# --- Corrected Wakeword to match the model ---
+
+# Wakeword settings
 WAKEWORD = "hey mycroft"  # The phrase to listen for
 WAKEWORD_MODEL_NAME = "hey_mycroft_v0.1" # A pre-trained model from openwakeword
-
-# --- Added Model Configuration ---
-OLLAMA_MODEL = "llama3"      # Model to use for Ollama
-WHISPER_MODEL = "base.en"    # Model to use for Whisper (e.g., "base.en", "small.en")
 
 # Audio settings (must match for VAD and Whisper)
 FORMAT = pyaudio.paInt16       # 16-bit audio
@@ -28,15 +22,31 @@ VAD_AGGRESSIVENESS = 2       # 0 (least aggressive) to 3 (most aggressive)
 SILENCE_CHUNKS = 70          # Number of 30ms silent chunks to stop recording
                              # (70 chunks * 30ms/chunk = 2100ms = 2.1 seconds of silence)
 
-# --- 2. Initialization ---
+# --- 2. Command-Line Argument Parsing ---
+
+# Set up argument parser
+parser = argparse.ArgumentParser(description="Ollama STT-TTS Voice Assistant")
+parser.add_argument('--ollama-model', 
+                    type=str, 
+                    default='llama3', 
+                    help='The Ollama model to use (e.g., "llama3", "mistral", "phi3")')
+parser.add_argument('--whisper-model', 
+                    type=str, 
+                    default='base.en', 
+                    help='The Whisper model to use (e.g., "tiny.en", "base.en", "small.en")')
+args = parser.parse_args()
+
+
+# --- 3. Initialization ---
 print("Loading models...")
+
 # Wakeword Model
-# --- Corrected model loading to let openwakeword handle downloads ---
+from openwakeword.model import Model
 oww_model = Model(wakeword_models=[WAKEWORD_MODEL_NAME])
 
 # Whisper Model
-# --- Using configured WHISPER_MODEL ---
-whisper_model = whisper.load_model(WHISPER_MODEL)
+print(f"Loading Whisper model: {args.whisper_model}...")
+whisper_model = whisper.load_model(args.whisper_model)
 
 # TTS Engine
 tts_engine = pyttsx3.init()
@@ -52,10 +62,9 @@ stream = audio.open(format=FORMAT,
                     input=True,
                     frames_per_buffer=CHUNK_SIZE)
 
-# --- Corrected print statement to show the actual wakeword ---
 print(f"\nReady! Listening for '{WAKEWORD}'...")
 
-# --- 3. Helper Functions ---
+# --- 4. Helper Functions ---
 
 def speak(text):
     """Speaks the given text using pyttsx3."""
@@ -63,21 +72,20 @@ def speak(text):
     tts_engine.say(text)
     tts_engine.runAndWait()
 
-def transcribe_audio(file_path):
-    """Transcribes audio file using Whisper."""
+def transcribe_audio(audio_np):
+    """Transcribes audio data (NumPy array) using Whisper."""
     try:
-        result = whisper_model.transcribe(file_path)
+        # Transcribe the NumPy array directly
+        result = whisper_model.transcribe(audio_np)
         return result['text']
     except Exception as e:
         print(f"Whisper transcription error: {e}")
         return ""
 
-# --- Improved error handling for Ollama ---
 def get_ollama_response(text):
-    """Gets a response from Ollama."""
+    """Gets a response from Ollama using the configured model."""
     try:
-        # --- Using configured OLLAMA_MODEL ---
-        response = ollama.chat(model=OLLAMA_MODEL, messages=[
+        response = ollama.chat(model=args.ollama_model, messages=[
             {'role': 'user', 'content': text}
         ])
         return response['message']['content']
@@ -89,10 +97,13 @@ def get_ollama_response(text):
         print(f"Ollama error: {e}")
         return "I'm sorry, I couldn't connect to Ollama. Is the Ollama server running?"
 
-def record_command():
-    """Records audio from the user until silence is detected."""
+def record_command(first_chunk):
+    """
+    Records audio from the user until silence is detected.
+    Returns audio data as a 32-bit float NumPy array.
+    """
     print("Listening for command...")
-    frames = []
+    frames = [first_chunk]  # Start with the chunk that triggered the wakeword
     silent_chunks = 0
     is_speaking = False
 
@@ -117,17 +128,16 @@ def record_command():
             is_speaking = True
             silent_chunks = 0
 
-    # Save the recorded audio to a temporary file
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
-        wf = wave.open(tmp_wav.name, 'wb')
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(audio.get_sample_size(FORMAT))
-        wf.setframerate(RATE)
-        wf.writeframes(b''.join(frames))
-        wf.close()
-        return tmp_wav.name
+    # Combine all audio chunks
+    audio_data = b''.join(frames)
+    
+    # Convert raw 16-bit audio data to a 32-bit float NumPy array
+    # This is the format Whisper expects
+    audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+    
+    return audio_np
 
-# --- 4. Main Loop ---
+# --- 5. Main Loop ---
 try:
     while True:
         # --- Wakeword Listening Loop ---
@@ -142,16 +152,16 @@ try:
             speak("Yes?")
             
             # --- Command Recording Loop ---
-            audio_file_path = record_command()
+            # Pass the triggering chunk to start the recording
+            audio_data = record_command(audio_chunk)
             
             # --- Process the Command ---
-            user_text = transcribe_audio(audio_file_path)
-            os.remove(audio_file_path) # Clean up the temp file
+            user_text = transcribe_audio(audio_data)
             
             if user_text:
                 print(f"You: {user_text}")
                 
-                # --- Corrected exit check for more robust matching ---
+                # Check for exit commands
                 user_prompt = user_text.lower().strip()
                 # Check for exact matches, allowing for punctuation
                 if user_prompt in ["exit", "exit.", "goodbye", "goodbye."]:
@@ -164,13 +174,12 @@ try:
             else:
                 speak("I'm sorry, I didn't catch that.")
             
-            # --- Corrected print statement to show the actual wakeword ---
             print(f"\nReady! Listening for '{WAKEWORD}'...")
 
 except KeyboardInterrupt:
     print("\nStopping assistant...")
 finally:
-    # --- 5. Cleanup ---
+    # --- 6. Cleanup ---
     stream.stop_stream()
     stream.close()
     audio.terminate()
