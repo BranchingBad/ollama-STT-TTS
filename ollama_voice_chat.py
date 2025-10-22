@@ -50,6 +50,10 @@ class VoiceAssistant:
     - Text-to-Speech (pyttsx3 in a separate thread)
     """
     
+    # --- IMPLEMENTS SUGGESTION 2 ---
+    # System prompt is now a class constant
+    SYSTEM_PROMPT = 'You are a helpful, concise voice assistant.'
+    
     def __init__(self, args: argparse.Namespace) -> None:
         """
         Initializes the assistant, loads models, and sets up audio.
@@ -92,8 +96,9 @@ class VoiceAssistant:
         
         # Conversation history
         # --- ENHANCEMENT: Added a system prompt ---
+        # --- IMPLEMENTS SUGGESTION 2 ---
         self.messages: List[Dict[str, str]] = [
-            {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
+            {'role': 'system', 'content': self.SYSTEM_PROMPT}
         ]
 
     def _tts_worker(self) -> None:
@@ -258,9 +263,15 @@ class VoiceAssistant:
                 if not self.stream:
                     logging.error("Audio stream was unexpectedly closed.")
                     break
-                    
-                # --- Wakeword Listening Loop ---
-                audio_chunk = self.stream.read(CHUNK_SIZE)
+                
+                try:
+                    # --- IMPLEMENTS SUGGESTION 1 ---
+                    # Added IOError handling to the main read loop
+                    audio_chunk = self.stream.read(CHUNK_SIZE)
+                except IOError as e:
+                    logging.error(f"Error reading from audio stream in main loop: {e}")
+                    logging.error("This may be due to a microphone disconnection. Stopping.")
+                    break
 
                 # --- MODIFIED: Only process audio if TTS is not active ---
                 if not self.is_speaking_event.is_set():
@@ -305,7 +316,9 @@ class VoiceAssistant:
                             # Clean up punctuation and check for commands
                             user_prompt = user_text.lower().strip().rstrip(".,!?")
                             
-                            if user_prompt.startswith("exit") or user_prompt.startswith("goodbye"):
+                            # --- IMPLEMENTS SUGGESTION 3 ---
+                            # Changed from startswith() to 'in' for flexibility
+                            if "exit" in user_prompt or "goodbye" in user_prompt:
                                 # --- This call should BLOCK ---
                                 self.speak("Goodbye!")
                                 self.wait_for_speech()
@@ -318,8 +331,9 @@ class VoiceAssistant:
                                 self.wait_for_speech()
                                 
                                 # Reset history, but keep the system prompt
+                                # --- IMPLEMENTS SUGGESTION 2 ---
                                 self.messages = [
-                                    {'role': 'system', 'content': 'You are a helpful, concise voice assistant.'}
+                                    {'role': 'system', 'content': self.SYSTEM_PROMPT}
                                 ]
                                 logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                                 self.stream.start_stream() # Restart for wakeword

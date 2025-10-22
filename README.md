@@ -151,3 +151,7 @@ Default: ``2.0``
 ``--listen-timeout``: Seconds to wait for speech to start before timing out.
 
 Default: ``5.0``
+
+``--pre-buffer-ms``: Seconds to wait for speech to start before timing out.
+
+Default: ``500``
