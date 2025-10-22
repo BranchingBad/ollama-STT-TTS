@@ -50,8 +50,6 @@ class VoiceAssistant:
     - Text-to-Speech (pyttsx3 in a separate thread)
     """
     
-    # --- IMPLEMENTS SUGGESTION 2 ---
-    # System prompt is now a class constant
     SYSTEM_PROMPT = 'You are a helpful, concise voice assistant.'
     
     def __init__(self, args: argparse.Namespace) -> None:
@@ -70,6 +68,7 @@ class VoiceAssistant:
 
         # Wakeword Model
         logging.info(f"Loading openwakeword model: {args.wakeword_model}...")
+        # Load model using wakeword_model_paths and point to the .onnx file
         self.oww_model = Model(wakeword_model_paths=[f"{args.wakeword_model}.onnx"])
 
         # Whisper Model
@@ -81,7 +80,7 @@ class VoiceAssistant:
         self.tts_queue = queue.Queue()
         self.tts_stop_event = threading.Event()
         
-        # --- ADDED: Event to signal when TTS is active ---
+        # Event to signal when TTS is active
         self.is_speaking_event = threading.Event()
         
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
@@ -95,16 +94,14 @@ class VoiceAssistant:
         self.stream: Optional[pyaudio.Stream] = None
         
         # Conversation history
-        # --- ENHANCEMENT: Added a system prompt ---
-        # --- IMPLEMENTS SUGGESTION 2 ---
         self.messages: List[Dict[str, str]] = [
             {'role': 'system', 'content': self.SYSTEM_PROMPT}
         ]
 
     def _tts_worker(self) -> None:
         """Dedicated thread for processing TTS tasks."""
-        text = None # Ensure text is defined in finally block
         while not self.tts_stop_event.is_set():
+            text = None # Reset text for this loop iteration
             try:
                 # Wait for text to speak, with a timeout
                 text = self.tts_queue.get(timeout=1.0)
@@ -112,7 +109,7 @@ class VoiceAssistant:
                 if text is None: # Sentinel for stopping
                     break
                 
-                # --- MODIFIED: Set event before speaking ---
+                # Set event before speaking
                 self.is_speaking_event.set()
                 self.tts_engine.say(text)
                 self.tts_engine.runAndWait()
@@ -125,7 +122,7 @@ class VoiceAssistant:
                 if text is not None:
                     self.tts_queue.task_done()
                 
-                # --- MODIFIED: Clear event after speaking (or error) ---
+                # Clear event after speaking (or error)
                 self.is_speaking_event.clear()
 
 
@@ -265,7 +262,6 @@ class VoiceAssistant:
                     break
                 
                 try:
-                    # --- IMPLEMENTS SUGGESTION 1 ---
                     # Added IOError handling to the main read loop
                     audio_chunk = self.stream.read(CHUNK_SIZE)
                 except IOError as e:
@@ -273,7 +269,7 @@ class VoiceAssistant:
                     logging.error("This may be due to a microphone disconnection. Stopping.")
                     break
 
-                # --- MODIFIED: Only process audio if TTS is not active ---
+                # Only process audio if TTS is not active
                 if not self.is_speaking_event.is_set():
                     audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
 
@@ -286,19 +282,19 @@ class VoiceAssistant:
                         
                         self.stream.stop_stream()  # Stop listening
                         
-                        # --- This call should BLOCK ---
+                        # This call should BLOCK
                         self.speak("Yes?")
                         self.wait_for_speech()     # Wait for "Yes?" to finish
                         
                         self.stream.start_stream() # Start listening for command
                         
-                        # --- Command Recording Loop ---
+                        # Command Recording Loop
                         audio_data = self.record_command()
                         
                         self.stream.stop_stream() # Stop while processing
                         
                         if audio_data is None:
-                            # --- This call should BLOCK ---
+                            # This call should BLOCK
                             self.speak("I didn't hear anything.")
                             self.wait_for_speech()
 
@@ -306,7 +302,7 @@ class VoiceAssistant:
                             self.stream.start_stream() # Restart for wakeword
                             continue # Go back to listening for wakeword
 
-                        # --- Process the Command ---
+                        # Process the Command
                         logging.info("Transcribing audio...")
                         user_text = self.transcribe_audio(audio_data)
                         
@@ -316,22 +312,20 @@ class VoiceAssistant:
                             # Clean up punctuation and check for commands
                             user_prompt = user_text.lower().strip().rstrip(".,!?")
                             
-                            # --- IMPLEMENTS SUGGESTION 3 ---
                             # Changed from startswith() to 'in' for flexibility
                             if "exit" in user_prompt or "goodbye" in user_prompt:
-                                # --- This call should BLOCK ---
+                                # This call should BLOCK
                                 self.speak("Goodbye!")
                                 self.wait_for_speech()
                                 break
                             
-                            # --- ENHANCEMENT: More flexible command matching ---
+                            # More flexible command matching
                             if "new chat" in user_prompt or "reset chat" in user_prompt:
-                                # --- This call should BLOCK ---
+                                # This call should BLOCK
                                 self.speak("Starting a new conversation.")
                                 self.wait_for_speech()
                                 
                                 # Reset history, but keep the system prompt
-                                # --- IMPLEMENTS SUGGESTION 2 ---
                                 self.messages = [
                                     {'role': 'system', 'content': self.SYSTEM_PROMPT}
                                 ]
@@ -343,7 +337,7 @@ class VoiceAssistant:
                             logging.info(f"Sending to {self.args.ollama_model}...")
                             ollama_reply = self.get_ollama_response(user_text)
                             
-                            # --- This call is NON-BLOCKING ---
+                            # This call is NON-BLOCKING
                             self.speak(ollama_reply)
 
                             # Block only if it was an error message
@@ -351,7 +345,7 @@ class VoiceAssistant:
                                 self.wait_for_speech()
 
                         else:
-                            # --- This call should BLOCK ---
+                            # This call should BLOCK
                             logging.warning("Transcription failed.")
                             self.speak("I'm sorry, I didn't catch that.")
                             self.wait_for_speech()
@@ -387,6 +381,7 @@ def main() -> None:
     # Configure logging
     logging.basicConfig(
         level=logging.INFO, 
+        # --- FIX: Corrected format string from %(messages)s to %(message)s ---
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
@@ -428,7 +423,6 @@ def main() -> None:
                         type=float,
                         default=5.0,
                         help='Seconds to wait for speech to start before timing out.')
-    # --- New Argument ---
     parser.add_argument('--pre-buffer-ms',
                         type=int,
                         default=500,
