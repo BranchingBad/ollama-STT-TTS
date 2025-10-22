@@ -1,8 +1,8 @@
-# Ollama STT-TTS Voice Assistant
+# 🤖 Ollama STT-TTS Voice Assistant
 
 A simple, hands-free Python voice assistant that runs 100% locally. This script uses openwakeword for wakeword detection, webrtcvad for silence detection, OpenAI's Whisper for transcription, and Ollama for generative AI responses.
 
-## How It Works
+## 🧩 How It Works
 
 The assistant operates in a continuous loop with the following flow:
 
@@ -16,14 +16,14 @@ flowchart LR
     F -- "Speaks response" --> G[Speaker];
 ```
 
-## Features
+## 💡 Features
 - **100% Local**: No cloud services are required for STT, TTS, or the LLM.
 - **Hands-Free**: Uses openwakeword for wakeword detection.
 - **Smart Recording**: Uses webrtcvad (Voice Activity Detection) to automatically stop recording when you finish speaking.
 - **High-Quality Transcription**: Leverages OpenAI's Whisper model for accurate speech-to-text.
 - **Flexible LLM**: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
 
-## 1. Prerequisites
+## ✅ 1. Prerequisites
 
 Before you begin, ensure you have the following installed and running:
 
@@ -42,7 +42,7 @@ ollama pull llama3
 ollama pull mistral
 ```
 
-### C. System Dependencies
+### 🔩 C. System Dependencies
 
 The ``PyAudio`` library requires ``portaudio``.
 
@@ -64,7 +64,7 @@ _Note: The portaudio-devel package is in the standard Fedora repositories, but f
 sudo dnf install portaudio-devel ffmpeg
 ```
 
-## 2. Installation
+## ⚙️ 2. Installation
 
 Clone this repository to your local machine:
 ```bash
@@ -83,7 +83,7 @@ Install the required Python libraries using the requirements.txt file:
 pip install -r requirements.txt
 ```
 
-## 3. Usage
+## ⌨️ 3. Usage
 
 Make sure your Ollama application is running in the background.
 
@@ -106,7 +106,7 @@ The script will transcribe your audio, send it to Ollama, and speak the response
 
 You can stop the script at any time with Ctrl+C.
 
-## 4. Configuration
+## 🎛️ 4. Configuration
 
 You can customize the assistant's behavior using command-line arguments.
 
