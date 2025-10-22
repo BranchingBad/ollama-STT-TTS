@@ -41,13 +41,16 @@ class VoiceAssistant:
     
     def __init__(self, args):
         """
-        Initializes the assistant, loads models, and sets up audio stream.
+        Initializes the assistant, loads models, and sets up audio.
         """
         self.args = args
         
         # Calculate derived audio settings
         self.silence_chunks = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
         self.pre_speech_timeout_chunks = int(args.listen_timeout * 1000 / CHUNK_DURATION_MS)
+        self.pre_buffer_size_ms = 500 # 0.5 seconds pre-buffer
+        self.pre_buffer_size_chunks = int(self.pre_buffer_size_ms / CHUNK_DURATION_MS)
+
 
         print("Loading models...")
 
@@ -67,11 +70,7 @@ class VoiceAssistant:
 
         # PyAudio
         self.audio = pyaudio.PyAudio()
-        self.stream = self.audio.open(format=FORMAT,
-                                      channels=CHANNELS,
-                                      rate=RATE,
-                                      input=True,
-                                      frames_per_buffer=CHUNK_SIZE)
+        self.stream = None # Stream will be opened in run()
         
         # Conversation history
         self.messages = []
@@ -119,44 +118,56 @@ class VoiceAssistant:
     def record_command(self):
         """
         Records audio from the user until silence is detected.
-        Starts recording *after* the initial "Yes?" prompt.
+        Uses a pre-buffer to catch the start of speech.
         Returns audio data as a 32-bit float NumPy array, or None if no speech is detected.
         """
         print("Listening for command...")
-        frames = []  # Start with an empty buffer
+        frames = []
         silent_chunks = 0
         is_speaking = False
-        pre_speech_chunks = 0 # Counter for timeout before speech starts
+        
+        # Store a small buffer of audio *before* speech starts
+        pre_buffer = []
+        timeout_chunks = self.pre_speech_timeout_chunks
 
         while True:
             try:
                 data = self.stream.read(CHUNK_SIZE)
-                frames.append(data)
-                
-                # Use VAD to check if the chunk contains speech
                 is_speech = self.vad.is_speech(data, RATE)
 
                 if is_speaking:
+                    # User is actively speaking
+                    frames.append(data)
                     if not is_speech:
                         silent_chunks += 1
                         if silent_chunks > self.silence_chunks:
                             print("Silence detected, processing...")
                             break
                     else:
-                        # Reset silence counter if speech is detected again
-                        silent_chunks = 0
+                        silent_chunks = 0 # Reset silence counter
+                
                 elif is_speech:
-                    # Start counting silence only after speech has begun
+                    # Speech has just started
+                    print("Speech detected...")
                     is_speaking = True
-                    silent_chunks = 0
-                else:
-                    # If no speech has started, count chunks towards a timeout
-                    pre_speech_chunks += 1
-                    if pre_speech_chunks > self.pre_speech_timeout_chunks:
+                    frames.extend(pre_buffer) # Add the pre-speech buffer
+                    frames.append(data)
+                    pre_buffer.clear()
+                
+                else: 
+                    # User is not speaking, and speech hasn't started
+                    # Add to pre-buffer and keep it at size
+                    pre_buffer.append(data)
+                    if len(pre_buffer) > self.pre_buffer_size_chunks:
+                        pre_buffer.pop(0)
+                    
+                    # Check for timeout
+                    timeout_chunks -= 1
+                    if timeout_chunks <= 0:
                         print("No speech detected, timing out.")
-                        return None # Return None to indicate no audio was captured
+                        return None
+                        
             except IOError as e:
-                # This can happen if the audio stream is interrupted
                 print(f"Error reading from audio stream: {e}")
                 return None
 
@@ -175,8 +186,16 @@ class VoiceAssistant:
         The main loop of the assistant. Listens for wakeword, then
         records, transcribes, and responds.
         """
-        print(f"\nReady! Listening for '{self.args.wakeword}'...")
         try:
+            # Open stream here
+            self.stream = self.audio.open(format=FORMAT,
+                                          channels=CHANNELS,
+                                          rate=RATE,
+                                          input=True,
+                                          frames_per_buffer=CHUNK_SIZE)
+            
+            print(f"\nReady! Listening for '{self.args.wakeword}'...")
+            
             while True:
                 # --- Wakeword Listening Loop ---
                 audio_chunk = self.stream.read(CHUNK_SIZE)
@@ -189,16 +208,20 @@ class VoiceAssistant:
                 # Check if the desired wakeword score is high
                 if prediction[self.args.wakeword_model] > self.args.wakeword_threshold:
                     print(f"Wakeword '{self.args.wakeword}' detected!")
-                    self.speak("Yes?")
+                    
+                    self.stream.stop_stream()  # Stop listening
+                    self.speak("Yes?")         # Speak
+                    self.stream.start_stream() # Start listening for command
                     
                     # --- Command Recording Loop ---
-                    # CRITICAL FIX: Record audio *after* "Yes?" has finished.
-                    # Do not pass the wakeword chunk.
                     audio_data = self.record_command()
+                    
+                    self.stream.stop_stream() # Stop while processing
                     
                     if audio_data is None:
                         self.speak("I didn't hear anything.")
                         print(f"\nReady! Listening for '{self.args.wakeword}'...")
+                        self.stream.start_stream() # Restart for wakeword
                         continue # Go back to listening for wakeword
 
                     # --- Process the Command ---
@@ -219,6 +242,7 @@ class VoiceAssistant:
                             self.speak("Starting a new conversation.")
                             self.messages = [] # Clear history
                             print(f"\nReady! Listening for '{self.args.wakeword}'...")
+                            self.stream.start_stream() # Restart for wakeword
                             continue
 
                         # Get and speak the response
@@ -229,18 +253,19 @@ class VoiceAssistant:
                         self.speak("I'm sorry, I didn't catch that.")
                     
                     print(f"\nReady! Listening for '{self.args.wakeword}'...")
+                    self.stream.start_stream() # Restart for wakeword
 
         except KeyboardInterrupt:
             print("\nStopping assistant...")
         finally:
+            if self.stream:
+                self.stream.stop_stream()
+                self.stream.close()
             self.cleanup()
 
     def cleanup(self):
-        """Cleans up audio resources."""
+        """Cleans up PyAudio resource."""
         print("Cleaning up resources...")
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
         if self.audio:
             self.audio.terminate()
 
