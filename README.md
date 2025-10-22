@@ -54,7 +54,7 @@ sudo apt-get install portaudio19-dev ffmpeg
 
 Clone this repository to your local machine:
 ```bash
-git clone [https://github.com/BranchingBad/ollama-STT-TTS.git]
+git clone https://github.com/BranchingBad/ollama-STT-TTS.git
 cd ollama-STT-TTS
 ```
 
