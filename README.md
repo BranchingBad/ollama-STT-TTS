@@ -1,4 +1,4 @@
-# 🤖 Ollama Voice Assistant (Speech-to-text / Text-to-speech)
+# 🤖 Ollama Voice Assistant (STT, LLM, TTS)
 
 A simple, hands-free Python voice assistant that runs 100% locally. This script uses openwakeword for wakeword detection, webrtcvad for silence detection, OpenAI's Whisper for transcription, and Ollama for generative AI responses.
 
