@@ -8,7 +8,7 @@ The assistant operates in a continuous loop with the following flow:
 
 [Microphone] ➡️ [openwakeword] ➡️ [webrtcvad] ➡️ [Whisper STT] ➡️ [Ollama LLM] ➡️ [pyttsx3 TTS] ➡️ [Speaker]
 
-(Listens for "hey ollama") (Records until silence) (Transcribes audio) (Generates response) (Speaks response)
+(Listens for "hey mycroft") (Records until silence) (Transcribes audio) (Generates response) (Speaks response)
 
 ## Features
 - **100% Local**: No cloud services are required for STT, TTS, or the LLM.
