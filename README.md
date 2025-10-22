@@ -56,6 +56,14 @@ On Debian/Ubuntu Linux:
 sudo apt-get install portaudio19-dev ffmpeg
 ```
 
+On Fedora/RHEL Linux:
+
+_Note: The portaudio-devel package is in the standard Fedora repositories, but ffmpeg is not. You must first enable the RPM Fusion repository to install ffmpeg._
+
+```bash
+sudo dnf install portaudio-devel ffmpeg
+```
+
 ## 2. Installation
 
 Clone this repository to your local machine:
