@@ -42,19 +42,19 @@ The ``PyAudio`` library requires ``portaudio``.
 
 On macOS (via Homebrew):
 ```bash
-brew install portaudio
+brew install portaudio ffmpeg
 ```
 
 On Debian/Ubuntu Linux:
 ```bash
-sudo apt-get install portaudio19-dev
+sudo apt-get install portaudio19-dev ffmpeg
 ```
 
 ## 2. Installation
 
 Clone this repository to your local machine:
 ```bash
-git clone [https://github.com/BranchingBad/ollama-STT-TTS.git](https://github.com/BranchingBad/ollama-STT-TTS.git)
+git clone [https://github.com/BranchingBad/ollama-STT-TTS.git]
 cd ollama-STT-TTS
 ```
 
