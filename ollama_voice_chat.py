@@ -10,8 +10,13 @@ import os
 from openwakeword.model import Model
 
 # --- 1. Configuration ---
-WAKEWORD = "hey ollama"  # The phrase to listen for
+# --- Corrected Wakeword to match the model ---
+WAKEWORD = "hey mycroft"  # The phrase to listen for
 WAKEWORD_MODEL_NAME = "hey_mycroft_v0.1" # A pre-trained model from openwakeword
+
+# --- Added Model Configuration ---
+OLLAMA_MODEL = "llama3"      # Model to use for Ollama
+WHISPER_MODEL = "base.en"    # Model to use for Whisper (e.g., "base.en", "small.en")
 
 # Audio settings (must match for VAD and Whisper)
 FORMAT = pyaudio.paInt16       # 16-bit audio
@@ -26,10 +31,12 @@ SILENCE_CHUNKS = 70          # Number of 30ms silent chunks to stop recording
 # --- 2. Initialization ---
 print("Loading models...")
 # Wakeword Model
-oww_model = Model(wakeword_models=[f"models/{WAKEWORD_MODEL_NAME}.onnx"])
+# --- Corrected model loading to let openwakeword handle downloads ---
+oww_model = Model(wakeword_models=[WAKEWORD_MODEL_NAME])
 
 # Whisper Model
-whisper_model = whisper.load_model("base.en")
+# --- Using configured WHISPER_MODEL ---
+whisper_model = whisper.load_model(WHISPER_MODEL)
 
 # TTS Engine
 tts_engine = pyttsx3.init()
@@ -45,6 +52,7 @@ stream = audio.open(format=FORMAT,
                     input=True,
                     frames_per_buffer=CHUNK_SIZE)
 
+# --- Corrected print statement to show the actual wakeword ---
 print(f"\nReady! Listening for '{WAKEWORD}'...")
 
 # --- 3. Helper Functions ---
@@ -64,16 +72,22 @@ def transcribe_audio(file_path):
         print(f"Whisper transcription error: {e}")
         return ""
 
+# --- Improved error handling for Ollama ---
 def get_ollama_response(text):
     """Gets a response from Ollama."""
     try:
-        response = ollama.chat(model='llama3', messages=[
+        # --- Using configured OLLAMA_MODEL ---
+        response = ollama.chat(model=OLLAMA_MODEL, messages=[
             {'role': 'user', 'content': text}
         ])
         return response['message']['content']
+    except ollama.ResponseError as e:
+        print(f"Ollama Response Error: {e.error}")
+        return "I'm sorry, I received an error from Ollama. Please check the console."
     except Exception as e:
+        # This often catches connection errors
         print(f"Ollama error: {e}")
-        return "I'm sorry, I had trouble processing that."
+        return "I'm sorry, I couldn't connect to Ollama. Is the Ollama server running?"
 
 def record_command():
     """Records audio from the user until silence is detected."""
@@ -136,8 +150,11 @@ try:
             
             if user_text:
                 print(f"You: {user_text}")
-                # Check for exit command
-                if "exit" in user_text.lower().strip() or "goodbye" in user_text.lower().strip():
+                
+                # --- Corrected exit check for more robust matching ---
+                user_prompt = user_text.lower().strip()
+                # Check for exact matches, allowing for punctuation
+                if user_prompt in ["exit", "exit.", "goodbye", "goodbye."]:
                     speak("Goodbye!")
                     break
                 
@@ -147,6 +164,7 @@ try:
             else:
                 speak("I'm sorry, I didn't catch that.")
             
+            # --- Corrected print statement to show the actual wakeword ---
             print(f"\nReady! Listening for '{WAKEWORD}'...")
 
 except KeyboardInterrupt:
