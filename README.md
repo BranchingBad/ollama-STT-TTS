@@ -1,4 +1,4 @@
-# 🤖 Ollama Speech-to-text - Text-to-speech Voice Assistant
+# 🤖 Ollama Voice Assistant (Speech-to-text / Text-to-speech)
 
 A simple, hands-free Python voice assistant that runs 100% locally. This script uses openwakeword for wakeword detection, webrtcvad for silence detection, OpenAI's Whisper for transcription, and Ollama for generative AI responses.
 
@@ -23,7 +23,7 @@ flowchart LR
 - **High-Quality Transcription**: Leverages OpenAI's Whisper model for accurate speech-to-text.
 - **Flexible LLM**: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
 
-## ✅ 1. Prerequisites
+## 🔩 1. Prerequisites
 
 Before you begin, ensure you have the following installed and running:
 
@@ -42,7 +42,7 @@ ollama pull llama3
 ollama pull mistral
 ```
 
-### 🔩 C. System Dependencies
+### C. System Dependencies
 
 The ``PyAudio`` library requires ``portaudio``.
 
@@ -64,7 +64,7 @@ _Note: The portaudio-devel package is in the standard Fedora repositories, but f
 sudo dnf install portaudio-devel ffmpeg
 ```
 
-## ⚙️ 2. Installation
+## 🔧 2. Installation
 
 Clone this repository to your local machine:
 ```bash
