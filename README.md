@@ -94,10 +94,35 @@ You can stop the script at any time with Ctrl+C.
 
 ## 4. Configuration
 
-```bash
-# To run with the defaults (llama3 and base.en)
-python ollama_voice_chat.py
+You can customize the assistant's behavior using command-line arguments.
 
-# To run with different models
-python ollama_voice_chat.py --ollama-model mistral --whisper-model small.en
+Run with defaults (llama3, base.en, hey mycroft):
+```Bash
+python ollama_voice_chat.py
 ```
+Example: Run with different models and settings:
+```Bash
+python ollama_voice_chat.py --ollama-model mistral --whisper-model small.en --wakeword "hey computer"
+```
+
+All Arguments
+``--ollama-model``: The Ollama model to use (e.g., "llama3", "mistral", "phi3").
+Default: ``llama3``
+
+``--whisper-model``: The Whisper model to use (e.g., "tiny.en", "base.en", "small.en").
+Default: ``base.en``
+
+``--wakeword-model``: The openwakeword model file to use.
+Default: ``hey_mycroft_v0.1``
+
+``--wakeword``: The specific wakeword phrase to listen for.
+Default: ``hey mycroft``
+
+``--wakeword-threshold``: Wakeword detection sensitivity (0.0 to 1.0). Higher is less sensitive.
+Default: ``0.5``
+
+``--vad-aggressiveness``: Voice Activity Detection aggressiveness (0=least, 3=most aggressive).
+Default: ``2``
+
+``--silence-seconds``: Seconds of silence to wait before stopping recording.
+Default: ``2.0``
