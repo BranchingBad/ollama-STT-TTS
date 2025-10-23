@@ -102,8 +102,8 @@ class VoiceAssistant:
         # Whisper Model
         logging.info(f"Loading Whisper model: {args.whisper_model}...")
         try:
-            # Explicitly set fp16=False to avoid warnings on CPU and ensure consistent behavior
-            self.whisper_model = whisper.load_model(args.whisper_model, device="cpu", fp16=False)
+            # FIX: Removed unsupported 'fp16=False' argument for compatibility with older whisper versions.
+            self.whisper_model = whisper.load_model(args.whisper_model, device="cpu")
         except Exception as e:
             logging.critical(f"Error loading Whisper model '{args.whisper_model}': {e}")
             logging.critical("Ensure the model name is correct and you have enough memory.")
