@@ -23,6 +23,7 @@ Improvements (Implemented in this version):
 - **ENHANCEMENT (v4): Refined conversation history management for interruptions and errors.**
 - **FIXED (v5): Corrected KeyError: 'pre-buffer-ms' by using 'pre_buffer_ms' for argparse default lookup.**
 - **ENHANCEMENT (v6): Added explicit Whisper model release during cleanup for better resource management.**
+- **ENHANCEMENT (v7): Improved PyAudio stream cleanup robustness with explicit try/except blocks.**
 """
 
 import ollama
@@ -609,22 +610,26 @@ class VoiceAssistant:
         
         # Stop and close the audio stream
         if self.stream:
+            # Stop the stream if active
             try:
                 if self.stream.is_active():
                     self.stream.stop_stream()
-            except Exception:
-                pass 
+            except Exception as e:
+                logging.warning(f"Error stopping audio stream: {e}")
+            
+            # Close the stream
+            try:
+                self.stream.close()
+            except Exception as e:
+                logging.warning(f"Error closing audio stream: {e}")
             finally:
-                try:
-                    self.stream.close()
-                except Exception:
-                    pass
-            self.stream = None
+                self.stream = None
         
         # Release Whisper Model resources (ENHANCEMENT)
         if hasattr(self, 'whisper_model'):
             try:
-                # Assuming the Whisper model loaded is a compatible instance that supports a resource release method
+                # The whisper library's load_model returns a model that often doesn't need explicit release 
+                # but for libraries like `faster-whisper` or if running on GPU, it is crucial.
                 if hasattr(self.whisper_model, 'release'):
                     self.whisper_model.release() 
                 elif hasattr(self.whisper_model, 'reset'):
@@ -649,7 +654,10 @@ class VoiceAssistant:
 
         # Terminate PyAudio
         if self.audio:
-            self.audio.terminate()
+            try:
+                self.audio.terminate()
+            except Exception as e:
+                 logging.warning(f"Error terminating PyAudio: {e}")
 
 def main() -> None:
     """
