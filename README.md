@@ -83,6 +83,8 @@ Install the required Python libraries using the requirements.txt file:
 pip install -r requirements.txt
 ```
 
+_(Note: You may also need to install openwakeword. If you encounter import errors, run: pip install openwakeword)_
+
 ## ⌨️ 3. Usage
 
 Make sure your Ollama application is running in the background.
@@ -94,64 +96,88 @@ python ollama_voice_chat.py
 
 On the first run, the script will automatically download the Whisper (``base.en``) and openwakeword models.
 
-You will see the message: ``Ready! Listening for 'hey mycroft'...``
+You will see the message: ``Ready! Listening for 'hey glados'...``
 
-Say "Hey mycroft".
+Say the wakeword (e.g., "Hey glados").
 
 The assistant will respond "Yes?" and begin listening for your command.
 
-Speak your prompt (e.g., "What's the capital of France?"). The script will listen until you stop talking for about 2 seconds.
+Speak your prompt (e.g., "What's the capital of France?"). The script will listen until you stop talking based on the silence detection settings.
 
 The script will transcribe your audio, send it to Ollama, and speak the response back to you. It will then automatically return to listening for the wakeword.
 
-You can stop the script at any time with Ctrl+C.
+You can stop the script at any time with Ctrl+C. Special voice commands like "goodbye" or "exit" will also stop the script, and "new chat" or "reset chat" will clear the conversation history.
 
 ## 🎛️ 4. Configuration
 
-You can customize the assistant's behavior using command-line arguments.
+You can customize the assistant's behavior using command-line arguments or by editing the ``config.ini`` file. Command-line arguments override settings in ``config.ini``.
 
-Run with defaults (llama3, base.en, hey mycroft):
+Run with defaults (set in ``ollama_voice_chat.py``):
 ```Bash
 python ollama_voice_chat.py
 ```
 Example: Run with different models and settings:
 ```Bash
-python ollama_voice_chat.py --ollama-model llama3 --whisper-model base.en --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 2 
+python ollama_voice_chat.py --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 3 
 ```
 
-All Arguments
+All Arguments:
+
 ``--ollama-model``: The Ollama model to use (e.g., "llama3", "mistral", "phi3").
 
-Default: ``phi3``
+Default: ``llama3``
 
-``--whisper-model``: The Whisper model to use (e.g., "tiny.en", "base.en", "small.en").
+``--whisper-model``: The Whisper model to use (e.g., "tiny.en", "base.en", "small.en"). Models are downloaded automatically.
 
 Default: ``base.en``
 
-``--wakeword-model``: The openwakeword model file to use.
+``--wakeword-model``: The base name of the openwakeword model file (e.g., "hey_glados", "hey_mycroft"). Assumes the .onnx file is in the same directory or will be downloaded.
 
 Default: ``hey_glados``
 
-``--wakeword``: The specific wakeword phrase to listen for.
+``--wakeword``: The specific wakeword phrase to listen for (must match the loaded model's phrase).
 
 Default: ``hey glados``
 
-``--wakeword-threshold``: Wakeword detection sensitivity (0.0 to 1.0). Higher is less sensitive.
+``--wakeword-threshold``: Wakeword detection sensitivity (0.0 to 1.0). Higher values are less sensitive.
 
 Default: ``0.5``
 
-``--vad-aggressiveness``: Voice Activity Detection aggressiveness (0=least, 3=most aggressive).
+``--vad-aggressiveness``: Voice Activity Detection aggressiveness (0=least aggressive, 3=most aggressive). Higher values detect silence more readily.
 
 Default: ``3``
 
-``--silence-seconds``: Seconds of silence to wait before stopping recording.
+``--silence-seconds``: Seconds of silence to wait before stopping recording after speech is detected.
 
 Default: ``0.5``
 
-``--listen-timeout``: Seconds to wait for speech to start before timing out.
+``--listen-timeout``: Seconds to wait for speech to start after the wakeword before timing out.
 
 Default: ``5.0``
 
-``--pre-buffer-ms``: Seconds to wait for speech to start before timing out.
+``--pre-buffer-ms``: Milliseconds of audio to capture before speech is detected, helps prevent cutting off the start of words.
 
 Default: ``500``
+    
+Configuration File (``config.ini``)
+
+You can also set default values by editing the ``config.ini`` file in the same directory as the script. This file allows you to configure most of the same options as the command-line arguments, plus the system prompt.
+
+Ini, TOML
+```Bash
+[Models]
+ollama_model = llama3       # Default Ollama model
+whisper_model = base.en     # Default Whisper model
+wakeword_model = hey_glados # Default wakeword model base name
+
+[Functionality]
+wakeword = hey glados       # Wakeword phrase
+wakeword_threshold = 0.6    # Wakeword sensitivity
+vad_aggressiveness = 2      # VAD aggressiveness
+silence_seconds = 0.7       # Silence duration to end recording
+listen_timeout = 6.0        # Timeout waiting for command speech
+pre_buffer_ms = 400         # Audio pre-buffering duration
+system_prompt = You are a helpful, concise voice assistant. # The initial prompt for Ollama
+```
+
+Note: Currently, the ``ollama_voice_chat.py`` script does not read ``config.ini``. The defaults are set directly in the script via ``argparse``. To use ``config.ini``, the script would need to be modified to read this file (e.g., using Python's ``configparser``). If modified, command-line arguments should still take precedence.
