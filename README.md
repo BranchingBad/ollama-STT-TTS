@@ -35,8 +35,8 @@ You must have the Ollama application installed and running.
 
 You need at least one model downloaded for Ollama to use.
 ```bash 
-#We recommend Llama 3
-ollama pull llama3
+#We recommend phi3 or Llama 3
+ollama pull phi3
 
 #Or, use another model
 ollama pull mistral
@@ -116,25 +116,25 @@ python ollama_voice_chat.py
 ```
 Example: Run with different models and settings:
 ```Bash
-python ollama_voice_chat.py --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 3 
+python ollama_voice_chat.py --ollama-model llama3 --whisper-model base.en --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 2 
 ```
 
 All Arguments
 ``--ollama-model``: The Ollama model to use (e.g., "llama3", "mistral", "phi3").
 
-Default: ``llama3``
+Default: ``phi3``
 
 ``--whisper-model``: The Whisper model to use (e.g., "tiny.en", "base.en", "small.en").
 
-Default: ``base.en``
+Default: ``tiny.en``
 
 ``--wakeword-model``: The openwakeword model file to use.
 
-Default: ``hey_mycroft_v0.1``
+Default: ``hey_glados``
 
 ``--wakeword``: The specific wakeword phrase to listen for.
 
-Default: ``hey mycroft``
+Default: ``hey glados``
 
 ``--wakeword-threshold``: Wakeword detection sensitivity (0.0 to 1.0). Higher is less sensitive.
 
@@ -142,11 +142,11 @@ Default: ``0.5``
 
 ``--vad-aggressiveness``: Voice Activity Detection aggressiveness (0=least, 3=most aggressive).
 
-Default: ``2``
+Default: ``3``
 
 ``--silence-seconds``: Seconds of silence to wait before stopping recording.
 
-Default: ``2.0``
+Default: ``0.5``
 
 ``--listen-timeout``: Seconds to wait for speech to start before timing out.
 
