@@ -1,4 +1,4 @@
-numpy
+numpy>=1.21
 ollama>=0.6.0
 openai-whisper
 openwakeword>=0.5.0
