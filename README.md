@@ -141,7 +141,7 @@ Default: ``hey glados``
 
 ``--wakeword-threshold``: Wakeword detection sensitivity (0.0 to 1.0). Higher values are less sensitive.
 
-Default: ``0.5``
+Default: ``0.6``
 
 ``--vad-aggressiveness``: Voice Activity Detection aggressiveness (0=least aggressive, 3=most aggressive). Higher values detect silence more readily.
 
@@ -163,11 +163,11 @@ Default: ``400``
 
 Default: ``You are a helpful, concise voice assistant.``
 
-CConfiguration File (`config.ini`)
+Configuration File (`config.ini`)
 
 You can also set default values by editing the `config.ini` file in the same directory as the script. This file allows you to configure most of the same options as the command-line arguments, plus the system prompt.
 
-Ini, TOML
+ini
 ```bash
 [Models]
 ollama_model = llama3       # Default Ollama model
@@ -184,4 +184,4 @@ pre_buffer_ms = 400         # Audio pre-buffering duration
 system_prompt = You are a helpful, concise voice assistant. # The initial prompt for Ollama
 ```
 
-**Note**: The ``ollama_voice_chat``.py script reads default settings from ``config.ini``. Any command-line arguments provided when running the script will override the values set in this file.
+**Note**: The ``ollama_voice_chat.py`` script reads default settings from ``config.ini``. Any command-line arguments provided when running the script will override the values set in this file.
