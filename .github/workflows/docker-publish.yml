@@ -30,5 +30,4 @@ jobs:
           context: .
           push: true
           # Tag the image with the repository name and 'latest'
-          # This will look like: ghcr.io/your-username/ollama-stt-tts:latest
-          tags: ghcr.io/${{ toLower(github.repository) }}:latest
+          tags: ghcr.io/branchingbad/ollama-stt-tts:latest
