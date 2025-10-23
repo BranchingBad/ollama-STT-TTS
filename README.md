@@ -83,8 +83,6 @@ Install the required Python libraries using the requirements.txt file:
 pip install -r requirements.txt
 ```
 
-_(Note: You may also need to install openwakeword. If you encounter import errors, run: pip install openwakeword)_
-
 ## ⌨️ 3. Usage
 
 Make sure your Ollama application is running in the background.
