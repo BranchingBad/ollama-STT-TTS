@@ -28,6 +28,15 @@ import numpy.typing as npt
 import sys
 import os # NEW: Import os for file path checking
 
+# Import torch for CUDA check (needed for Whisper device selection)
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    logging.warning("PyTorch not found. GPU (CUDA) support for Whisper will be disabled.")
+
+
 # --- 1. Audio Settings (Constants) ---
 FORMAT = pyaudio.paInt16       # 16-bit audio
 CHANNELS = 1                 # Mono
@@ -56,7 +65,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     'device_index': None,
     'tts_voice_id': None,
     'tts_volume': 1.0, 
-    'max_words_per_command': 60, # NEW: Default max words for a command
+    'max_words_per_command': 60, 
+    'whisper_device': 'cpu', # NEW: Default Whisper device
 }
 
 
@@ -174,11 +184,25 @@ class VoiceAssistant:
             logging.critical("This error usually means the .onnx file is corrupted or not accessible.")
             raise
 
-        # Whisper Model
-        logging.info(f"Loading Whisper model: {args.whisper_model}...")
+        # Whisper Model Device Selection (ENHANCEMENT)
+        self.whisper_device = args.whisper_device
+        if self.whisper_device == 'cuda':
+            if not TORCH_AVAILABLE:
+                logging.warning("PyTorch not installed. Falling back to CPU for Whisper.")
+                self.whisper_device = 'cpu'
+            elif not torch.cuda.is_available():
+                logging.warning("CUDA device not found. Falling back to CPU for Whisper.")
+                self.whisper_device = 'cpu'
+            else:
+                logging.info(f"CUDA device found. Using {self.whisper_device} for Whisper.")
+        else:
+            self.whisper_device = 'cpu'
+            logging.info(f"Using CPU for Whisper.")
+            
+        logging.info(f"Loading Whisper model: {args.whisper_model} on device '{self.whisper_device}'...")
         try:
-            # We rely on 'device="cpu"' to handle CPU-only systems
-            self.whisper_model = whisper.load_model(args.whisper_model, device="cpu")
+            # We use the determined device
+            self.whisper_model = whisper.load_model(args.whisper_model, device=self.whisper_device)
         except (RuntimeError, OSError, ValueError, Exception) as e:
             logging.critical(f"Error loading Whisper model '{args.whisper_model}': {e}")
             logging.critical("This may be due to a missing model file, low system memory, or an incompatible PyTorch version.")
@@ -352,6 +376,7 @@ class VoiceAssistant:
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Transcribes audio data (NumPy array) using Whisper."""
         try:
+            # Device is now dynamically set during model loading
             result = self.whisper_model.transcribe(audio_np, language="en")
             return result.get('text', '').strip()
         except Exception as e:
@@ -582,7 +607,7 @@ class VoiceAssistant:
         logging.info("Transcribing audio...")
         user_text = self.transcribe_audio(audio_data)
         
-        # --- ENHANCEMENT: Word count check ---
+        # --- Word count check ---
         if user_text:
             word_count = len(user_text.split())
             if word_count > self.args.max_words_per_command:
@@ -735,10 +760,16 @@ class VoiceAssistant:
         
         if hasattr(self, 'whisper_model'):
             try:
+                # This explicitly releases the model from the device (important for VRAM on GPU)
+                if hasattr(self.whisper_model, 'to') and self.whisper_device != 'cpu':
+                    self.whisper_model.to('cpu')
+                
+                # These methods are often placeholders but good practice to call
                 if hasattr(self.whisper_model, 'release'):
                     self.whisper_model.release() 
                 elif hasattr(self.whisper_model, 'reset'):
                     self.whisper_model.reset()
+                
                 logging.debug("Whisper model resources released.")
             except Exception as e:
                 logging.warning(f"Error releasing Whisper model resources: {e}")
@@ -807,7 +838,8 @@ def load_config_and_args() -> Tuple[argparse.Namespace, argparse.ArgumentParser]
                  
                  argparse_defaults['tts_voice_id'] = config.get('Functionality', 'tts_voice_id', fallback=argparse_defaults['tts_voice_id'])
                  argparse_defaults['tts_volume'] = config.getfloat('Functionality', 'tts_volume', fallback=argparse_defaults['tts_volume'])
-                 argparse_defaults['max_words_per_command'] = config.getint('Functionality', 'max_words_per_command', fallback=argparse_defaults['max_words_per_command']) # NEW: Load setting
+                 argparse_defaults['max_words_per_command'] = config.getint('Functionality', 'max_words_per_command', fallback=argparse_defaults['max_words_per_command']) 
+                 argparse_defaults['whisper_device'] = config.get('Functionality', 'whisper_device', fallback=argparse_defaults['whisper_device']) # NEW: Load device setting
                  
                  device_index_val = config.get('Functionality', 'device_index', fallback=None)
                  if device_index_val is not None and device_index_val.strip() != '' and device_index_val.strip().lower() != 'none':
@@ -847,6 +879,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, argparse.ArgumentParser]
     parser.add_argument('--tts-voice-id', type=str, default=argparse_defaults['tts_voice_id'], help='ID of the pyttsx3 voice to use. (Use --list-voices to see options)')
     parser.add_argument('--tts-volume', type=float, default=argparse_defaults['tts_volume'], help='TTS speaking volume (0.0 to 1.0).')
     parser.add_argument('--max-words-per-command', type=int, default=argparse_defaults['max_words_per_command'], help='Maximum number of words allowed in a command transcription.')
+    parser.add_argument('--whisper-device', type=str, default=argparse_defaults['whisper_device'], choices=['cpu', 'cuda'], help="Device to use for Whisper transcription ('cpu' or 'cuda').") # NEW: Argparse for device
 
 
     args = parser.parse_args()
