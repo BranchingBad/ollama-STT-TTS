@@ -89,7 +89,7 @@ Make sure your Ollama application is running in the background.
 
 Run the main script:
 ```bash
-python ollama_voice_chat.py
+python assistant.py
 ```
 
 On the first run, the script will automatically download the Whisper (``base.en``) and openwakeword models.
@@ -115,11 +115,11 @@ You can customize the assistant's behavior using command-line arguments or by ed
 Run with defaults (loaded from ``config.ini``):
 
 ```Bash
-python ollama_voice_chat.py
+python assistant.py
 ```
 Example: Run with different models and settings:
 ```Bash
-python ollama_voice_chat.py --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 1
+python assistant.py --wakeword-threshold 0.6 --vad-aggressiveness 1
 ```
 
 All Arguments:
