@@ -37,7 +37,8 @@ Improvements (Implemented in this version):
 - ENHANCEMENT (v13): Added error threshold to _tts_worker for robust TTS failure handling.
 - QOL (v13): Enhanced startup logging to consistently report the actual audio device index used.
 - QOL (v14): Redacted 'ollama_host' from startup summary logging when using default localhost address.
-- **ENHANCEMENT (v15): Implemented check for permanent TTS failure in main loop to force clean shutdown.**
+- ENHANCEMENT (v15): Implemented check for permanent TTS failure in main loop to force clean shutdown.
+- **STRUCTURAL (v16): Centralized default configuration settings for better modularity and maintenance.**
 """
 
 import ollama
@@ -53,7 +54,7 @@ import queue
 import configparser
 import time
 from openwakeword.model import Model
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import numpy.typing as npt
 import sys
 
@@ -68,7 +69,25 @@ SENTENCE_END_PUNCTUATION = ['.', '?', '!', '\n']
 MAX_TTS_ERRORS = 5           # Max consecutive errors before stopping TTS worker
 DEFAULT_OLLAMA_HOST = 'http://localhost:11434' # Define default for logging check
 
-# --- 2. PyAudio Configuration Check ---
+# --- 2. Centralized Configuration Defaults ---
+DEFAULT_SETTINGS: Dict[str, Any] = {
+    'ollama_model': 'llama3',
+    'whisper_model': 'tiny.en',
+    'wakeword_model_path': 'hey_glados.onnx',
+    'ollama_host': DEFAULT_OLLAMA_HOST,
+    'wakeword': 'hey glados',
+    'wakeword_threshold': 0.5, 
+    'vad_aggressiveness': 3,   
+    'silence_seconds': 0.5,    
+    'listen_timeout': 4.0,     
+    'pre_buffer_ms': 400,
+    'system_prompt': 'You are a helpful, concise voice assistant.',
+    'device_index': None,
+    'tts_voice_id': None,
+}
+
+
+# --- 3. PyAudio Configuration Check ---
 def check_ollama_connectivity(host: str) -> bool:
     """Checks if the Ollama server is running and reachable."""
     try:
@@ -80,7 +99,7 @@ def check_ollama_connectivity(host: str) -> bool:
         logging.error(f"Ollama server is not reachable at {host}. Error: {e}")
         return False
 
-# --- 3. PyAudio and TTS Helpers (Definitions added for completeness) ---
+# --- 4. PyAudio and TTS Helpers (Definitions added for completeness) ---
 def list_audio_devices(p_audio: pyaudio.PyAudio):
     """Lists all available audio input devices."""
     print("\n--- Available Audio Input Devices ---")
@@ -192,7 +211,7 @@ class VoiceAssistant:
         self.tts_stop_event = threading.Event()
         self.is_speaking_event = threading.Event()
         self.interrupt_event = threading.Event()
-        self.tts_has_failed = threading.Event() # NEW: Flag for permanent TTS failure
+        self.tts_has_failed = threading.Event() # Flag for permanent TTS failure
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
         self.tts_thread.start()
 
@@ -735,22 +754,8 @@ def main() -> None:
     Parses arguments, reads config, and runs the VoiceAssistant.
     """
     config = configparser.ConfigParser()
-    # Updated defaults based on best practice and user logs
-    argparse_defaults = {
-        'ollama_model': 'llama3',
-        'whisper_model': 'tiny.en', # Changed for performance
-        'wakeword_model_path': 'hey_glados.onnx',
-        'ollama_host': DEFAULT_OLLAMA_HOST, # Use defined constant
-        'wakeword': 'hey glados',
-        'wakeword_threshold': 0.5, 
-        'vad_aggressiveness': 3,   
-        'silence_seconds': 0.5,    
-        'listen_timeout': 4.0,     
-        'pre_buffer_ms': 400,
-        'system_prompt': 'You are a helpful, concise voice assistant.',
-        'device_index': None,
-        'tts_voice_id': None,
-    }
+    # Initialize defaults from the centralized constant
+    argparse_defaults = DEFAULT_SETTINGS.copy()
 
     temp_parser = argparse.ArgumentParser(add_help=False)
     temp_parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose DEBUG logging')
@@ -784,11 +789,11 @@ def main() -> None:
         if config.read('config.ini'):
              logging.info("Loaded configuration from config.ini")
              
+             # Read values from config.ini, falling back to initialized defaults
              if 'Models' in config:
                  argparse_defaults['ollama_model'] = config.get('Models', 'ollama_model', fallback=argparse_defaults['ollama_model'])
                  argparse_defaults['whisper_model'] = config.get('Models', 'whisper_model', fallback=argparse_defaults['whisper_model'])
                  argparse_defaults['wakeword_model_path'] = config.get('Models', 'wakeword_model_path', fallback=argparse_defaults['wakeword_model_path'])
-                 # Read ollama_host
                  argparse_defaults['ollama_host'] = config.get('Models', 'ollama_host', fallback=argparse_defaults['ollama_host'])
              
              if 'Functionality' in config:
@@ -823,6 +828,7 @@ def main() -> None:
         parents=[temp_parser, list_parser]
     )
 
+    # Simplified argument definition using argparse_defaults
     parser.add_argument('--ollama-model', type=str, default=argparse_defaults['ollama_model'], help='Ollama model (e.g., "llama3")')
     parser.add_argument('--ollama-host', type=str, default=argparse_defaults['ollama_host'], help='The URL for the Ollama server (e.g., "http://192.168.1.10:11434").')
     parser.add_argument('--whisper-model', type=str, default=argparse_defaults['whisper_model'], help='Whisper model (e.g., "tiny.en", "base.en").')
