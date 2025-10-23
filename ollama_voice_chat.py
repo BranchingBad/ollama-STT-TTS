@@ -19,11 +19,23 @@ Improvements (Implemented in this version):
 - NEW (v2): Changed default Whisper model to 'tiny.en' for faster CPU-based transcription.
 - NEW (v2): Explicitly disabled FP16 for Whisper on CPU to silence warnings and optimize performance.
 - NEW (v2): Improved Ollama error handling and message history management during streaming.
-- **FIXED (v3): Removed stream stop before command recording to resolve 'Audio stream is not open or active' error.**
-- **ENHANCEMENT (v4): Refined conversation history management for interruptions and errors.**
-- **FIXED (v5): Corrected KeyError: 'pre-buffer-ms' by using 'pre_buffer_ms' for argparse default lookup.**
-- **ENHANCEMENT (v6): Added explicit Whisper model release during cleanup for better resource management.**
-- **ENHANCEMENT (v7): Improved PyAudio stream cleanup robustness with explicit try/except blocks.**
+- FIXED (v3): Removed stream stop before command recording to resolve 'Audio stream is not open or active' error.
+- ENHANCEMENT (v4): Refined conversation history management for interruptions and errors.
+- FIXED (v5): Corrected KeyError: 'pre-buffer-ms' by using 'pre_buffer_ms' for argparse default lookup.
+- ENHANCEMENT (v6): Added explicit Whisper model release during cleanup for better resource management.
+- ENHANCEMENT (v7): Improved PyAudio stream cleanup robustness with explicit try/except blocks.
+- ENHANCEMENT (v8): Made Ollama host configurable via config file/CLI.
+- ENHANCEMENT (v8): Improved logging for listen timeout in record_command.
+- UX IMPROVEMENT (v8): Instantaneous history reset for 'new chat' command.
+- ENHANCEMENT (v9): Added dedicated method for conversation history reset.
+- ENHANCEMENT (v9): Improved Whisper model error handling for robust startup.
+- UX IMPROVEMENT (v9): Clearer logging if a specified TTS voice ID is not found.
+- ENHANCEMENT (v10): Added retry logic for PyAudio stream opening in run() for device robustness.
+- ENHANCEMENT (v10): Improved logging levels and checks for Ollama connection status.
+- QOL (v11): Ensured instantaneous TTS stop and queue clearing during barge-in for immediate responsiveness.
+- STRUCTURAL (v12): Simplified main run loop by removing redundant in-loop stream restart logic, relying on post-command restart.
+- **ENHANCEMENT (v13): Added error threshold to _tts_worker for robust TTS failure handling.**
+- **QOL (v13): Enhanced startup logging to consistently report the actual audio device index used.**
 """
 
 import ollama
@@ -51,17 +63,18 @@ CHUNK_DURATION_MS = 30       # 30ms chunks for VAD
 CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames per chunk
 INT16_NORMALIZATION = 32768.0 # Normalization factor for int16
 SENTENCE_END_PUNCTUATION = ['.', '?', '!', '\n']
+MAX_TTS_ERRORS = 5           # Max consecutive errors before stopping TTS worker
 
 # --- 2. PyAudio Configuration Check ---
-def check_ollama_connectivity(host: str = 'http://localhost:11434') -> bool:
+def check_ollama_connectivity(host: str) -> bool:
     """Checks if the Ollama server is running and reachable."""
     try:
         ollama.Client(host=host).list()
         logging.info("Ollama server is reachable.")
         return True
     except Exception as e:
-        # Changed to INFO or WARNING since we want to initialize other parts even if Ollama is down
-        logging.warning(f"Ollama server is not reachable at {host}. Error: {e}")
+        # Changed to ERROR for the initial check to be more prominent
+        logging.error(f"Ollama server is not reachable at {host}. Error: {e}")
         return False
 
 # --- 3. PyAudio and TTS Helpers (Definitions added for completeness) ---
@@ -113,9 +126,8 @@ class VoiceAssistant:
         self.system_prompt: str = args.system_prompt
 
         # Ollama Connectivity Check
-        if not check_ollama_connectivity():
-             # Note: We continue to initialize other parts, but LLM requests will fail.
-             pass
+        self.ollama_is_connected = check_ollama_connectivity(args.ollama_host)
+        # Note: We continue to initialize other parts even if Ollama is down.
 
         # Calculate derived audio settings
         self.silence_chunks: int = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
@@ -140,23 +152,22 @@ class VoiceAssistant:
         # Whisper Model
         logging.info(f"Loading Whisper model: {args.whisper_model}...")
         try:
-            # Removed unsupported 'fp16=False' for compatibility, relying on 'device="cpu"'
+            # We rely on 'device="cpu"' to handle CPU-only systems
             self.whisper_model = whisper.load_model(args.whisper_model, device="cpu")
-        except Exception as e:
+        except (RuntimeError, OSError, ValueError, Exception) as e: # Catching a broader range of exceptions
             logging.critical(f"Error loading Whisper model '{args.whisper_model}': {e}")
-            logging.critical("Ensure the model name is correct and you have enough memory.")
+            logging.critical("This may be due to a missing model file, low system memory, or an incompatible PyTorch version.")
             raise
 
         # TTS Engine
         logging.info("Initializing TTS engine...")
         self.tts_engine = pyttsx3.init()
         # Initial voice ID logging is often debug/trace level, using full logging here
-        current_voice = self.tts_engine.getProperty('voice')
-        logging.debug(f"Default TTS voice ID: {current_voice}")
+        current_voice_id = self.tts_engine.getProperty('voice')
+        logging.debug(f"Default TTS voice ID: {current_voice_id}")
 
         if args.tts_voice_id:
             try:
-                # Need to iterate through voices to find a match by ID/name, not just set a property
                 found_voice = None
                 for voice in self.tts_engine.getProperty('voices'):
                     if voice.id == args.tts_voice_id or voice.name == args.tts_voice_id:
@@ -165,9 +176,10 @@ class VoiceAssistant:
                 
                 if found_voice:
                     self.tts_engine.setProperty('voice', found_voice.id)
-                    logging.debug(f"Successfully set voice to: {found_voice.id}")
+                    logging.info(f"Successfully set voice to: {found_voice.id} ({found_voice.name})")
                 else:
-                    logging.warning(f"TTS voice ID '{args.tts_voice_id}' not found. Using default.")
+                    # UX IMPROVEMENT: Clearer logging for missing voice
+                    logging.warning(f"TTS voice ID/Name '{args.tts_voice_id}' not found. Using default voice: {current_voice_id}.")
 
             except Exception as e:
                 logging.error(f"Error setting TTS voice ID: {e}. Using default.")
@@ -193,10 +205,8 @@ class VoiceAssistant:
             self.device_index = self.find_default_input_device()
             if self.device_index is None:
                 logging.critical("No suitable input device found.")
-                # Raise an exception *after* the audio object is created, so cleanup can run
-                # but we'll re-raise it at the end of init.
                 raise IOError("No input audio device found.")
-            logging.info(f"No --device-index provided. Auto-selected device: {self.device_index}")
+            logging.info(f"Auto-selected audio device index: {self.device_index}") # QOL: Enhanced logging
         else:
             try:
                 # Basic check for a specified index
@@ -210,9 +220,9 @@ class VoiceAssistant:
             logging.info(f"Using specified audio device index: {self.device_index}")
 
         # Conversation history
-        self.messages: List[Dict[str, str]] = [
-            {'role': 'system', 'content': self.system_prompt}
-        ]
+        self.messages: List[Dict[str, str]] = []
+        # Initialize history with system prompt
+        self.reset_history()
         logging.info(f"Using system prompt: '{self.system_prompt}'")
 
     def find_default_input_device(self) -> Optional[int]:
@@ -235,8 +245,14 @@ class VoiceAssistant:
                     continue
         return None
 
+    def reset_history(self) -> None:
+        """Resets the conversation history to only the system prompt."""
+        self.messages = [{'role': 'system', 'content': self.system_prompt}]
+        logging.debug("Conversation history reset.")
+
     def _tts_worker(self) -> None:
-        """Dedicated thread for processing TTS tasks."""
+        """Dedicated thread for processing TTS tasks with error resilience."""
+        consecutive_errors = 0
         while not self.tts_stop_event.is_set():
             text = None
             try:
@@ -251,11 +267,23 @@ class VoiceAssistant:
                 
                 self.tts_engine.say(text)
                 self.tts_engine.runAndWait()
+                
+                # If successful, reset error count
+                consecutive_errors = 0
 
             except queue.Empty:
                 continue
             except Exception as e:
-                logging.error(f"TTS worker error: {e}")
+                logging.error(f"TTS worker error while processing '{text[:20]}...': {e}")
+                consecutive_errors += 1
+                if consecutive_errors >= MAX_TTS_ERRORS:
+                    logging.critical(f"TTS worker failed {MAX_TTS_ERRORS} consecutive times. Stopping TTS thread.")
+                    # Clear the queue to prevent reprocessing the failing item
+                    with self.tts_queue.mutex:
+                        self.tts_queue.queue.clear()
+                    self.tts_stop_event.set() # Stop the worker loop
+                    break
+
             finally:
                 if text is not None:
                     self.tts_queue.task_done()
@@ -267,6 +295,11 @@ class VoiceAssistant:
 
     def speak(self, text: str) -> None:
         """Adds text to the TTS queue to be spoken by the worker thread."""
+        # Check if the TTS worker is still alive before queuing text
+        if not self.tts_thread.is_alive():
+            logging.error(f"Cannot speak: TTS engine has failed or stopped. Text: '{text[:20]}...'")
+            return
+
         # Use debug for the text being spoken, info for the action
         logging.debug(f"Queueing TTS: '{text}'")
         
@@ -323,6 +356,12 @@ class VoiceAssistant:
         Gets a response from Ollama, maintains conversation history
         and streams the output sentence-by-sentence to the TTS queue.
         """
+        if not self.ollama_is_connected:
+             logging.warning("Ollama connection is known to be down. Skipping API call.")
+             self.speak("I can't talk right now, my language model isn't connected.")
+             self.wait_for_speech()
+             return
+
         # 1. Append user message for context *before* the API call
         self.messages.append({'role': 'user', 'content': user_text})
         
@@ -339,7 +378,9 @@ class VoiceAssistant:
             response_stream = ollama.chat(
                 model=self.args.ollama_model,
                 messages=self.messages,
-                stream=True
+                stream=True,
+                # Use the configured host
+                host=self.args.ollama_host
             )
 
             for chunk in response_stream:
@@ -368,7 +409,6 @@ class VoiceAssistant:
         except ollama.ResponseError as e:
             error_message = f"I'm sorry, I received an error from Ollama: {e.error}"
             logging.error(error_message)
-            # If the error happened *after* streaming started, a partial response might be in full_response.
             # We add a spoken error *after* any partial speech.
             self.speak("I'm sorry, I had trouble connecting to the language model.")
             full_response = "" # Clear full response to prevent bad history update
@@ -383,7 +423,10 @@ class VoiceAssistant:
             # Close the stream explicitly if it was opened
             if response_stream:
                 try:
-                    response_stream.close()
+                    # In newer ollama-python versions, this might not be strictly needed,
+                    # but it's good for robustness.
+                    if hasattr(response_stream, 'close'):
+                         response_stream.close()
                 except Exception as e:
                     logging.error(f"Error closing Ollama stream: {e}")
             
@@ -438,7 +481,8 @@ class VoiceAssistant:
 
                     timeout_chunks -= 1
                     if timeout_chunks <= 0:
-                        logging.warning("No speech detected, timing out.")
+                        # Improved logging for timeout
+                        logging.warning(f"No speech detected after {self.args.listen_timeout} seconds, timing out.")
                         return None
             except IOError as e:
                 # Catching IOError here (e.g. mic unplugged) for robust looping
@@ -475,9 +519,6 @@ class VoiceAssistant:
 
         if audio_data is None:
             # Only speak "I didn't hear anything" if the VAD timeout was hit
-            # Interruption and timeout can both lead to audio_data being None.
-            # We rely on the interrupt_event to distinguish if we need to speak
-            # the timeout message.
             if not self.interrupt_event.is_set():
                 self.speak("I didn't hear anything.")
                 self.wait_for_speech()
@@ -496,10 +537,12 @@ class VoiceAssistant:
                 self.speak("Goodbye!")
                 self.wait_for_speech()
                 return True # Exit
+            
             if "new chat" in user_prompt or "reset chat" in user_prompt:
+                # UX ENHANCEMENT: Reset history immediately for a snappier feel
+                self.reset_history() # Use the new helper method
                 self.speak("Starting a new conversation.")
                 self.wait_for_speech()
-                self.messages = [{'role': 'system', 'content': self.system_prompt}]
                 return False # Don't exit
 
             self.speak("Thinking...")
@@ -525,25 +568,45 @@ class VoiceAssistant:
         The main loop of the assistant. Listens for wakeword or
         interruption, then records, transcribes, and responds.
         """
+        # Define maximum retries for stream opening
+        MAX_STREAM_RETRIES = 3 
+        RETRY_DELAY = 1.0 # Seconds
+
+        # --- Stream Initialization with Retry (Ensures stream is active before main loop) ---
+        for attempt in range(MAX_STREAM_RETRIES):
+            try:
+                self.stream = self.audio.open(format=FORMAT,
+                                              channels=CHANNELS,
+                                              rate=RATE,
+                                              input=True,
+                                              input_device_index=self.device_index,
+                                              frames_per_buffer=CHUNK_SIZE)
+                logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+                break # Stream opened successfully
+            except IOError as e:
+                if attempt < MAX_STREAM_RETRIES - 1:
+                    logging.warning(f"Error opening audio stream (Attempt {attempt+1}/{MAX_STREAM_RETRIES}): {e}. Retrying in {RETRY_DELAY}s...")
+                    time.sleep(RETRY_DELAY)
+                else:
+                    logging.critical(f"FATAL: Failed to open audio stream after {MAX_STREAM_RETRIES} attempts. {e}")
+                    return # Exit run if all retries fail
+        
+        if not self.stream:
+             return # Safety check if we broke out of the loop without a stream
+
+        # --- Main Loop ---
         try:
-            # Open stream
-            self.stream = self.audio.open(format=FORMAT,
-                                          channels=CHANNELS,
-                                          rate=RATE,
-                                          input=True,
-                                          input_device_index=self.device_index,
-                                          frames_per_buffer=CHUNK_SIZE)
-
-            logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
-
             while True:
                 if not self.stream:
                     logging.error("Audio stream was unexpectedly closed.")
                     break
                 
-                # Ensure stream is active if it was stopped by a previous command
+                # STRUCTURAL CHANGE: The stream should only ever be stopped by process_user_command().
+                # If we're here, and stream.is_active() is False, it means the last command 
+                # (which stopped it) finished, and we need to explicitly start it again.
                 if not self.stream.is_active():
-                    self.stream.start_stream()
+                     self.stream.start_stream()
+
 
                 try:
                     # Use exception_on_overflow=False to avoid crashes on buffer overflow
@@ -559,24 +622,22 @@ class VoiceAssistant:
                     if is_speech:
                         logging.info("User interruption (barge-in) detected!")
                         
-                        # Set event to stop LLM generation loop
-                        self.interrupt_event.set()
-                        
-                        # Stop pyttsx3 speech immediately and clear queue
+                        # QOL ENHANCEMENT: Immediately stop and clear to prioritize the user
                         self.tts_engine.stop() 
-                        # Clear the queue to prevent queued speech from being spoken after the interruption
                         with self.tts_queue.mutex:
                             self.tts_queue.queue.clear()
-                        # Clear event immediately so the next run of process_user_command can start listening
+                        
+                        # Set event to stop LLM generation loop (if running)
+                        self.interrupt_event.set()
+                        # Clear speaking event so process_user_command can start listening immediately
                         self.is_speaking_event.clear() 
                         
                         # Process the new command
                         if self.process_user_command():
                             break # Exit main loop
                         
-                        # Restart stream and print ready message
-                        if self.stream and not self.stream.is_active():
-                            self.stream.start_stream()
+                        # Restart stream and print ready message (The structural change below makes this logic cleaner)
+                        # The stream restart is handled implicitly by the next loop iteration's check.
                         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                     
                     continue # Don't check for wakeword while speaking
@@ -595,8 +656,7 @@ class VoiceAssistant:
                         break # Exit main loop
 
                     # Restart stream and print ready message
-                    if self.stream and not self.stream.is_active():
-                        self.stream.start_stream()
+                    # The stream restart is handled implicitly by the next loop iteration's check.
                     logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
 
         except KeyboardInterrupt:
@@ -625,15 +685,12 @@ class VoiceAssistant:
             finally:
                 self.stream = None
         
-        # Release Whisper Model resources (ENHANCEMENT)
+        # Release Whisper Model resources
         if hasattr(self, 'whisper_model'):
             try:
-                # The whisper library's load_model returns a model that often doesn't need explicit release 
-                # but for libraries like `faster-whisper` or if running on GPU, it is crucial.
                 if hasattr(self.whisper_model, 'release'):
                     self.whisper_model.release() 
                 elif hasattr(self.whisper_model, 'reset'):
-                    # Some libraries use reset to free resources/state
                     self.whisper_model.reset()
                 logging.debug("Whisper model resources released.")
             except Exception as e:
@@ -669,6 +726,7 @@ def main() -> None:
         'ollama_model': 'llama3',
         'whisper_model': 'tiny.en', # Changed for performance
         'wakeword_model_path': 'hey_glados.onnx',
+        'ollama_host': 'http://localhost:11434', # NEW DEFAULT
         'wakeword': 'hey glados',
         'wakeword_threshold': 0.5, 
         'vad_aggressiveness': 3,   
@@ -716,6 +774,8 @@ def main() -> None:
                  argparse_defaults['ollama_model'] = config.get('Models', 'ollama_model', fallback=argparse_defaults['ollama_model'])
                  argparse_defaults['whisper_model'] = config.get('Models', 'whisper_model', fallback=argparse_defaults['whisper_model'])
                  argparse_defaults['wakeword_model_path'] = config.get('Models', 'wakeword_model_path', fallback=argparse_defaults['wakeword_model_path'])
+                 # Read ollama_host
+                 argparse_defaults['ollama_host'] = config.get('Models', 'ollama_host', fallback=argparse_defaults['ollama_host'])
              
              if 'Functionality' in config:
                  argparse_defaults['wakeword'] = config.get('Functionality', 'wakeword', fallback=argparse_defaults['wakeword'])
@@ -750,6 +810,7 @@ def main() -> None:
     )
 
     parser.add_argument('--ollama-model', type=str, default=argparse_defaults['ollama_model'], help='Ollama model (e.g., "llama3")')
+    parser.add_argument('--ollama-host', type=str, default=argparse_defaults['ollama_host'], help='The URL for the Ollama server (e.g., "http://192.168.1.10:11434").')
     parser.add_argument('--whisper-model', type=str, default=argparse_defaults['whisper_model'], help='Whisper model (e.g., "tiny.en", "base.en").')
     parser.add_argument('--wakeword-model-path', type=str, default=argparse_defaults['wakeword_model_path'], help='Full path to the .onnx wakeword model.')
     parser.add_argument('--wakeword', type=str, default=argparse_defaults['wakeword'], help='Wakeword phrase.')
@@ -778,8 +839,9 @@ def main() -> None:
         assistant = VoiceAssistant(args)
         assistant.run()
     except IOError as e:
-        logging.critical(f"FATAL ERROR: {e}")
-        logging.critical("This is often due to an audio device issue.")
+        # Catching the initial fatal error from VoiceAssistant init
+        logging.critical(f"FATAL ERROR during initialization: {e}")
+        logging.critical("This is often due to an audio device issue or missing required file.")
         logging.critical("Try running with --list-devices to check your microphone.")
     except Exception as e:
         logging.critical(f"An unexpected error occurred: {e}", exc_info=True)
