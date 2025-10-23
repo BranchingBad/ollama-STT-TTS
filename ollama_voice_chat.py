@@ -25,6 +25,7 @@ Further Improvements (in this version):
   directly,
   instead of parsing filenames.
 - Made audio device listing more robust.
+- Implemented TTS Interruptibility (Barge-in).
 """
 
 import ollama
@@ -114,6 +115,7 @@ class VoiceAssistant:
         self.tts_queue = queue.Queue()
         self.tts_stop_event = threading.Event()
         self.is_speaking_event = threading.Event()
+        self.interrupt_event = threading.Event()  # For user barge-in
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
         self.tts_thread.start()
 
@@ -184,7 +186,9 @@ class VoiceAssistant:
             finally:
                 if text is not None:
                     self.tts_queue.task_done()
-                self.is_speaking_event.clear()
+                # Only clear speaking event if queue is empty
+                if self.tts_queue.empty():
+                    self.is_speaking_event.clear()
 
     def speak(self, text: str) -> None:
         """Adds text to the TTS queue to be spoken by the worker thread."""
@@ -233,6 +237,12 @@ class VoiceAssistant:
             )
 
             for chunk in response_stream:
+                # --- Check for user interruption ---
+                if self.interrupt_event.is_set():
+                    logging.info("User interrupted, stopping LLM generation.")
+                    break
+                # --- End interruption check ---
+                
                 token = chunk['message']['content']
                 full_response += token
                 sentence_buffer += token
@@ -243,7 +253,7 @@ class VoiceAssistant:
                     sentence_buffer = ""
             
             # Speak any remaining text in the buffer
-            if sentence_buffer.strip():
+            if sentence_buffer.strip() and not self.interrupt_event.is_set():
                 self.speak(sentence_buffer.strip())
 
             # Add the complete response to history
@@ -275,8 +285,12 @@ class VoiceAssistant:
                 if not self.stream:
                     logging.error("Audio stream is not open.")
                     return None
+                
+                if not self.stream.is_active():
+                    logging.warning("record_command: Stream is not active. Starting.")
+                    self.stream.start_stream()
 
-                data = self.stream.read(CHUNK_SIZE)
+                data = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 is_speech = self.vad.is_speech(data, RATE)
                 
                 logging.debug(f"VAD Speech: {is_speech}")
@@ -314,10 +328,63 @@ class VoiceAssistant:
 
         return audio_np
 
+    def process_user_command(self) -> bool:
+        """
+        Records, transcribes, and responds to a user command.
+        Assumes audio stream is active. It will stop the stream
+        internally.
+        Returns True if the assistant should exit.
+        """
+        audio_data = self.record_command()
+        self.stream.stop_stream() # Stop stream after recording
+
+        if audio_data is None:
+            self.speak("I didn't hear anything.")
+            self.wait_for_speech()
+            return False # Don't exit
+
+        logging.info("Transcribing audio...")
+        user_text = self.transcribe_audio(audio_data)
+
+        if user_text:
+            logging.info(f"You: {user_text}")
+            
+            # --- IMPROVEMENT: Move "Thinking..." to *after* transcription ---
+            self.speak("Thinking...")
+            
+            user_prompt = user_text.lower().strip().rstrip(".,!?")
+
+            if "exit" in user_prompt or "goodbye" in user_prompt:
+                self.speak("Goodbye!")
+                self.wait_for_speech()
+                return True # Exit
+            if "new chat" in user_prompt or "reset chat" in user_prompt:
+                self.speak("Starting a new conversation.")
+                self.wait_for_speech()
+                self.messages = [
+                    {'role': 'system', 'content': self.system_prompt}
+                ]
+                return False # Don't exit
+
+            logging.info(f"Sending to {self.args.ollama_model}...")
+            
+            # --- IMPROVEMENT: Call streaming function ---
+            self.get_ollama_response_stream(user_text)
+            
+            # Wait for the *entire* streamed response to finish speaking
+            self.wait_for_speech() 
+
+        else:
+            logging.warning("Transcription failed.")
+            self.speak("I'm sorry, I didn't catch that.")
+            self.wait_for_speech()
+        
+        return False # Don't exit
+
     def run(self) -> None:
         """
-        The main loop of the assistant. Listens for wakeword, then
-        records, transcribes, and responds.
+        The main loop of the assistant. Listens for wakeword or
+        interruption, then records, transcribes, and responds.
         """
         try:
             self.stream = self.audio.open(format=FORMAT,
@@ -333,80 +400,68 @@ class VoiceAssistant:
                 if not self.stream:
                     logging.error("Audio stream was unexpectedly closed.")
                     break
+                
+                if not self.stream.is_active():
+                    logging.info("Stream is not active. Starting.")
+                    self.stream.start_stream()
 
                 try:
-                    audio_chunk = self.stream.read(CHUNK_SIZE)
+                    # Use exception_on_overflow=False to avoid crashes on buffer overflow
+                    audio_chunk = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 except IOError as e:
                     logging.error(f"Error reading from audio stream in main loop: {e}")
                     logging.error("This may be due to a microphone disconnection. Stopping.")
                     break
 
-                if not self.is_speaking_event.is_set():
-                    audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
-                    prediction = self.oww_model.predict(audio_np_int16)
-
-                    # --- IMPROVEMENT: Use robust key and safer .get() ---
-                    if prediction.get(self.wakeword_model_key, 0) > self.args.wakeword_threshold:
-                        logging.info(f"Wakeword '{self.args.wakeword}' detected!")
-                        self.oww_model.reset()
-
-                        self.stream.stop_stream()
-                        self.speak("Yes?")
-                        self.wait_for_speech()
-                        self.stream.start_stream()
-
-                        audio_data = self.record_command()
-                        self.stream.stop_stream()
-
-                        if audio_data is None:
-                            self.speak("I didn't hear anything.")
-                            self.wait_for_speech()
-                            logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
-                            self.stream.start_stream()
-                            continue
+                # --- 1. Check for User Interruption (Barge-in) ---
+                if self.is_speaking_event.is_set():
+                    is_speech = self.vad.is_speech(audio_chunk, RATE)
+                    if is_speech:
+                        logging.info("User interruption (barge-in) detected!")
+                        self.interrupt_event.set()
+                        self.tts_engine.stop() # Stop current speech
                         
-                        logging.info("Transcribing audio...")
-                        user_text = self.transcribe_audio(audio_data)
-
-                        if user_text:
-                            logging.info(f"You: {user_text}")
-                            
-                            # --- IMPROVEMENT: Move "Thinking..." to *after* transcription ---
-                            # This feels more responsive and accurate.
-                            self.speak("Thinking...")
-                            
-                            user_prompt = user_text.lower().strip().rstrip(".,!?")
-
-                            if "exit" in user_prompt or "goodbye" in user_prompt:
-                                self.speak("Goodbye!")
-                                self.wait_for_speech()
-                                break
-                            if "new chat" in user_prompt or "reset chat" in user_prompt:
-                                self.speak("Starting a new conversation.")
-                                self.wait_for_speech()
-                                self.messages = [
-                                    {'role': 'system', 'content': self.system_prompt}
-                                ]
-                                logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
-                                self.stream.start_stream()
-                                continue
-
-                            logging.info(f"Sending to {self.args.ollama_model}...")
-                            
-                            # --- IMPROVEMENT: Call streaming function ---
-                            # This function now handles its own speech.
-                            self.get_ollama_response_stream(user_text)
-                            
-                            # Wait for the *entire* streamed response to finish speaking
-                            self.wait_for_speech() 
-
-                        else:
-                            logging.warning("Transcription failed.")
-                            self.speak("I'm sorry, I didn't catch that.")
-                            self.wait_for_speech()
-
+                        # Clear the queue of any pending sentences
+                        with self.tts_queue.mutex:
+                            self.tts_queue.queue.clear()
+                        
+                        # self.stream is already active, process_user_command will stop it
+                        if self.process_user_command():
+                            break # Exit main loop
+                        
+                        # Reset interrupt and restart stream
+                        self.interrupt_event.clear()
+                        # stream will be started by process_user_command if needed, or here
+                        if not self.stream.is_active():
+                            self.stream.start_stream()
                         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+                    
+                    continue # Don't check for wakeword while speaking
+                
+                # --- 2. Check for Wakeword (if not speaking) ---
+                audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
+                prediction = self.oww_model.predict(audio_np_int16)
+
+                # --- IMPROVEMENT: Use robust key and safer .get() ---
+                if prediction.get(self.wakeword_model_key, 0) > self.args.wakeword_threshold:
+                    logging.info(f"Wakeword '{self.args.wakeword}' detected!")
+                    self.oww_model.reset()
+
+                    # Reset interrupt event on new command
+                    self.interrupt_event.clear() 
+
+                    self.stream.stop_stream()
+                    self.speak("Yes?")
+                    self.wait_for_speech()
+                    self.stream.start_stream()
+
+                    if self.process_user_command():
+                        break # Exit main loop
+
+                    # Restart stream and print ready message
+                    if not self.stream.is_active():
                         self.stream.start_stream()
+                    logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
 
         except KeyboardInterrupt:
             logging.info("\nStopping assistant...")
@@ -526,7 +581,19 @@ def main() -> None:
                  argparse_defaults['listen_timeout'] = config.getfloat('Functionality', 'listen_timeout', fallback=argparse_defaults['listen_timeout'])
                  argparse_defaults['pre_buffer_ms'] = config.getint('Functionality', 'pre_buffer_ms', fallback=argparse_defaults['pre_buffer_ms'])
                  argparse_defaults['system_prompt'] = config.get('Functionality', 'system_prompt', fallback=argparse_defaults['system_prompt'])
-                 argparse_defaults['device_index'] = config.getint('Functionality', 'device_index', fallback=argparse_defaults['device_index'])
+                 
+                 # --- FIX for config.getint() with None fallback ---
+                 # Must read as string first because getint() cannot have None as fallback
+                 device_index_val = config.get('Functionality', 'device_index', fallback=argparse_defaults['device_index'])
+                 if device_index_val is not None:
+                     try:
+                         argparse_defaults['device_index'] = int(device_index_val)
+                     except ValueError:
+                         logging.warning(f"Invalid 'device_index' in config.ini: '{device_index_val}'. Using default (None).")
+                         argparse_defaults['device_index'] = None
+                 else:
+                    argparse_defaults['device_index'] = None
+                 
                  argparse_defaults['tts_voice_id'] = config.get('Functionality', 'tts_voice_id', fallback=argparse_defaults['tts_voice_id'])
         else:
              logging.warning("config.ini not found, using default settings.")
@@ -575,3 +642,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
