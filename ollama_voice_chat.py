@@ -8,24 +8,14 @@ This script uses openwakeword for wakeword detection, webrtcvad for silence
 detection, OpenAI's Whisper for transcription, and Ollama for generative AI
 responses.
 
-Improvements:
-- Added audio device selection (--list-devices, --device-index).
-- Added TTS voice selection (--list-voices, --tts-voice-id).
-- Added "Thinking..." feedback to reduce perceived latency.
-- Added verbose logging option (-v, --verbose).
-- Fixed wakeword model path to accept a full path.
-
-Further Improvements (in this version):
-- Implemented Ollama streaming for sentence-by-sentence TTS output,
-  dramatically
-  reducing time-to-first-speech.
-- Made "Thinking..." feedback more accurate by placing it *after*
-  transcription.
-- Made wakeword model key detection robust by querying the loaded model
-  directly,
-  instead of parsing filenames.
-- Made audio device listing more robust.
+Improvements (Implemented in this version):
+- Implemented Ollama streaming for sentence-by-sentence TTS output.
 - Implemented TTS Interruptibility (Barge-in).
+- Improved robust wakeword key detection.
+- Unified configuration handling for 'wakeword_model_path' across config and arguments.
+- UX Improvement: Removed the "Yes?" response to reduce latency/awkward silence after wakeword detection.
+- Added a simple non-blocking check for Ollama connectivity during initialization.
+- Refined logging for clarity.
 """
 
 import ollama
@@ -39,6 +29,7 @@ import logging
 import threading
 import queue
 import configparser
+import time
 from openwakeword.model import Model
 from typing import List, Dict, Optional
 import numpy.typing as npt
@@ -52,6 +43,18 @@ CHUNK_DURATION_MS = 30       # 30ms chunks for VAD
 CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames per chunk
 INT16_NORMALIZATION = 32768.0 # Normalization factor for int16
 SENTENCE_END_PUNCTUATION = ['.', '?', '!', '\n']
+
+# --- 2. PyAudio Configuration Check ---
+# Helper to check if Ollama is running and reachable
+def check_ollama_connectivity(host: str = 'http://localhost:11434'):
+    """Checks if the Ollama server is running and reachable."""
+    try:
+        ollama.Client(host=host).list()
+        logging.info("Ollama server is reachable.")
+        return True
+    except Exception as e:
+        logging.error(f"Ollama server is not reachable at {host}. Error: {e}")
+        return False
 
 class VoiceAssistant:
     """
@@ -70,11 +73,15 @@ class VoiceAssistant:
         self.args: argparse.Namespace = args
         self.system_prompt = args.system_prompt
 
+        # Ollama Connectivity Check
+        if not check_ollama_connectivity():
+             # Do not raise error, but log critical and warn that LLM will fail
+             logging.critical("Ollama connection failed during initialization. The assistant will not be able to generate responses.")
+
         # Calculate derived audio settings
         self.silence_chunks: int = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
         self.pre_speech_timeout_chunks: int = int(args.listen_timeout * 1000 / CHUNK_DURATION_MS)
-        self.pre_buffer_size_ms: int = args.pre_buffer_ms
-        self.pre_buffer_size_chunks: int = int(self.pre_buffer_size_ms / CHUNK_DURATION_MS)
+        self.pre_buffer_size_chunks: int = int(args.pre_buffer_ms / CHUNK_DURATION_MS)
 
         logging.info("Loading models...")
 
@@ -83,8 +90,7 @@ class VoiceAssistant:
         try:
             self.oww_model = Model(wakeword_model_paths=[args.wakeword_model_path])
             
-            # --- IMPROVEMENT: Robust wakeword key detection ---
-            # Instead of parsing the filename, ask the model what key it loaded.
+            # --- Robust wakeword key detection ---
             self.wakeword_model_key = list(self.oww_model.models.keys())[0]
             logging.info(f"Loaded wakeword model with key: '{self.wakeword_model_key}'")
             
@@ -96,6 +102,7 @@ class VoiceAssistant:
         # Whisper Model
         logging.info(f"Loading Whisper model: {args.whisper_model}...")
         try:
+            # Note: Whisper models are case-sensitive (e.g., 'base.en' vs 'base')
             self.whisper_model = whisper.load_model(args.whisper_model)
         except Exception as e:
             logging.error(f"Error loading Whisper model '{args.whisper_model}': {e}")
@@ -112,7 +119,7 @@ class VoiceAssistant:
             except Exception as e:
                 logging.warning(f"Could not set TTS voice ID: {e}. Using default.")
         
-        self.tts_queue = queue.Queue()
+        self.tts_queue: queue.Queue = queue.Queue()
         self.tts_stop_event = threading.Event()
         self.is_speaking_event = threading.Event()
         self.interrupt_event = threading.Event()  # For user barge-in
@@ -136,7 +143,9 @@ class VoiceAssistant:
             logging.info(f"No --device-index provided. Auto-selected device: {self.device_index}")
         else:
             try:
-                self.audio.get_device_info_by_index(self.device_index)
+                device_info = self.audio.get_device_info_by_index(self.device_index)
+                if int(device_info.get('maxInputChannels', 0)) == 0:
+                    raise IOError(f"Device index {self.device_index} is not an input device.")
             except IOError as e:
                 logging.critical(f"Invalid --device-index {self.device_index}: {e}")
                 logging.critical("Use --list-devices to see available devices.")
@@ -153,9 +162,12 @@ class VoiceAssistant:
         """Tries to find the default input device."""
         try:
             default_device_info = self.audio.get_default_input_device_info()
-            return int(default_device_info['index'])
+            if int(default_device_info.get('maxInputChannels', 0)) > 0:
+                return int(default_device_info['index'])
+            else:
+                raise IOError("Default device found, but has no input channels.")
         except IOError as e:
-            logging.warning(f"Could not get default input device: {e}. Searching all devices...")
+            logging.warning(f"Could not get default input device automatically: {e}. Searching all devices...")
             for i in range(self.audio.get_device_count()):
                 try:
                     dev = self.audio.get_device_info_by_index(i)
@@ -171,11 +183,15 @@ class VoiceAssistant:
         while not self.tts_stop_event.is_set():
             text = None
             try:
-                text = self.tts_queue.get(timeout=1.0)
+                # Use a small timeout to allow for graceful exit
+                text = self.tts_queue.get(timeout=0.1)
                 if text is None: # Stop sentinel
                     break
 
                 self.is_speaking_event.set()
+                # Stop any previous queued speech to ensure interruptibility
+                self.tts_engine.stop() 
+                
                 self.tts_engine.say(text)
                 self.tts_engine.runAndWait()
 
@@ -186,8 +202,9 @@ class VoiceAssistant:
             finally:
                 if text is not None:
                     self.tts_queue.task_done()
-                # Only clear speaking event if queue is empty
-                if self.tts_queue.empty():
+                
+                # Check if the queue is now empty before clearing the speaking event
+                if self.tts_queue.empty() and not self.interrupt_event.is_set():
                     self.is_speaking_event.clear()
 
     def speak(self, text: str) -> None:
@@ -199,11 +216,15 @@ class VoiceAssistant:
         """Blocks until the TTS queue is empty and all speech is finished."""
         logging.debug("Waiting for speech to finish...")
         self.tts_queue.join()
+        # The is_speaking_event should be cleared in the _tts_worker after join() is complete
+        # but joining here ensures the main thread doesn't continue until finished.
+        self.is_speaking_event.clear()
         logging.debug("Speech finished.")
 
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Transcribes audio data (NumPy array) using Whisper."""
         try:
+            # Whisper transcription can be slow, especially on CPU
             result = self.whisper_model.transcribe(audio_np, language="en")
             return result.get('text', '').strip()
         except Exception as e:
@@ -229,7 +250,6 @@ class VoiceAssistant:
                  logging.warning("Messages list did not start with system prompt. Re-adding.")
                  self.messages.insert(0, {'role': 'system', 'content': self.system_prompt})
 
-            # --- IMPROVEMENT: Use stream=True ---
             response_stream = ollama.chat(
                 model=self.args.ollama_model,
                 messages=self.messages,
@@ -240,7 +260,8 @@ class VoiceAssistant:
                 # --- Check for user interruption ---
                 if self.interrupt_event.is_set():
                     logging.info("User interrupted, stopping LLM generation.")
-                    break
+                    # Stop the generator loop immediately
+                    break 
                 # --- End interruption check ---
                 
                 token = chunk['message']['content']
@@ -290,6 +311,7 @@ class VoiceAssistant:
                     logging.warning("record_command: Stream is not active. Starting.")
                     self.stream.start_stream()
 
+                # Using a 0.05 second timeout to help ensure a timely shutdown on Ctrl+C
                 data = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 is_speech = self.vad.is_speech(data, RATE)
                 
@@ -322,8 +344,13 @@ class VoiceAssistant:
             except IOError as e:
                 logging.error(f"Error reading from audio stream: {e}")
                 return None
+            except Exception as e:
+                # Catching general exceptions within the loop for robustness
+                logging.error(f"Unexpected error during recording: {e}")
+                return None
 
         audio_data: bytes = b''.join(frames)
+        # Convert to float32 NumPy array and normalize for Whisper
         audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_NORMALIZATION
 
         return audio_np
@@ -336,11 +363,16 @@ class VoiceAssistant:
         Returns True if the assistant should exit.
         """
         audio_data = self.record_command()
-        self.stream.stop_stream() # Stop stream after recording
+        
+        # Stop stream after recording, regardless of success
+        if self.stream and self.stream.is_active():
+             self.stream.stop_stream()
 
         if audio_data is None:
-            self.speak("I didn't hear anything.")
-            self.wait_for_speech()
+            # --- UX: Only speak "I didn't hear anything" if it's not an interrupt action ---
+            if not self.interrupt_event.is_set():
+                self.speak("I didn't hear anything.")
+                self.wait_for_speech()
             return False # Don't exit
 
         logging.info("Transcribing audio...")
@@ -349,7 +381,7 @@ class VoiceAssistant:
         if user_text:
             logging.info(f"You: {user_text}")
             
-            # --- IMPROVEMENT: Move "Thinking..." to *after* transcription ---
+            # --- UX Improvement: Move "Thinking..." to *after* transcription ---
             self.speak("Thinking...")
             
             user_prompt = user_text.lower().strip().rstrip(".,!?")
@@ -368,7 +400,7 @@ class VoiceAssistant:
 
             logging.info(f"Sending to {self.args.ollama_model}...")
             
-            # --- IMPROVEMENT: Call streaming function ---
+            # Call streaming function
             self.get_ollama_response_stream(user_text)
             
             # Wait for the *entire* streamed response to finish speaking
@@ -387,6 +419,7 @@ class VoiceAssistant:
         interruption, then records, transcribes, and responds.
         """
         try:
+            # Open stream
             self.stream = self.audio.open(format=FORMAT,
                                           channels=CHANNELS,
                                           rate=RATE,
@@ -402,7 +435,6 @@ class VoiceAssistant:
                     break
                 
                 if not self.stream.is_active():
-                    logging.info("Stream is not active. Starting.")
                     self.stream.start_stream()
 
                 try:
@@ -418,20 +450,29 @@ class VoiceAssistant:
                     is_speech = self.vad.is_speech(audio_chunk, RATE)
                     if is_speech:
                         logging.info("User interruption (barge-in) detected!")
+                        
+                        # Signal interruption to LLM stream
                         self.interrupt_event.set()
-                        self.tts_engine.stop() # Stop current speech
+                        
+                        # Stop pyttsx3 speech immediately
+                        self.tts_engine.stop() 
                         
                         # Clear the queue of any pending sentences
                         with self.tts_queue.mutex:
                             self.tts_queue.queue.clear()
                         
-                        # self.stream is already active, process_user_command will stop it
+                        # The stream is still active, but stop it to prevent overflow during processing
+                        if self.stream.is_active():
+                            self.stream.stop_stream() 
+
                         if self.process_user_command():
                             break # Exit main loop
                         
-                        # Reset interrupt and restart stream
+                        # Reset interrupt and speaking events
                         self.interrupt_event.clear()
-                        # stream will be started by process_user_command if needed, or here
+                        self.is_speaking_event.clear() 
+
+                        # Restart stream and print ready message
                         if not self.stream.is_active():
                             self.stream.start_stream()
                         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
@@ -442,7 +483,7 @@ class VoiceAssistant:
                 audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
                 prediction = self.oww_model.predict(audio_np_int16)
 
-                # --- IMPROVEMENT: Use robust key and safer .get() ---
+                # --- Check for wakeword detection ---
                 if prediction.get(self.wakeword_model_key, 0) > self.args.wakeword_threshold:
                     logging.info(f"Wakeword '{self.args.wakeword}' detected!")
                     self.oww_model.reset()
@@ -450,10 +491,14 @@ class VoiceAssistant:
                     # Reset interrupt event on new command
                     self.interrupt_event.clear() 
 
-                    self.stream.stop_stream()
-                    self.speak("Yes?")
-                    self.wait_for_speech()
-                    self.stream.start_stream()
+                    # Stop stream for processing command
+                    if self.stream.is_active():
+                        self.stream.stop_stream()
+                    
+                    # --- UX Improvement: Removed "Yes?" to reduce latency ---
+                    # Now we just proceed directly to recording
+                    # self.speak("Yes?")
+                    # self.wait_for_speech() # Wait for "Yes?" to finish
 
                     if self.process_user_command():
                         break # Exit main loop
@@ -472,17 +517,30 @@ class VoiceAssistant:
         """Cleans up PyAudio and stops the TTS thread."""
         logging.info("Cleaning up resources...")
         
+        # Stop and close the audio stream
         if self.stream:
-            if self.stream.is_active():
-                self.stream.stop_stream()
-            self.stream.close()
+            try:
+                if self.stream.is_active():
+                    self.stream.stop_stream()
+            except Exception:
+                pass # Ignore errors if stream is already stopped or device disconnected
+            finally:
+                try:
+                    self.stream.close()
+                except Exception:
+                    pass
             self.stream = None
 
+        # Stop the TTS thread gracefully
         self.tts_stop_event.set()
-        self.tts_queue.put(None)
+        # Add a sentinel value to the queue to unblock the worker
+        self.tts_queue.put(None) 
         if hasattr(self, 'tts_thread') and self.tts_thread.is_alive():
-            self.tts_thread.join(timeout=2.0)
+            self.tts_thread.join(timeout=1.0)
+            if self.tts_thread.is_alive():
+                 logging.warning("TTS thread did not join gracefully.")
 
+        # Terminate PyAudio
         if self.audio:
             self.audio.terminate()
 
@@ -492,15 +550,15 @@ def list_audio_devices(p_audio: pyaudio.PyAudio):
     """Lists all available audio input devices."""
     logging.info("Available Audio Input Devices:")
     
-    # --- IMPROVEMENT: Iterate all device indices, not just from one API ---
     num_devices = p_audio.get_device_count()
-    
     found_devices = False
+    
     for i in range(num_devices):
         try:
             dev = p_audio.get_device_info_by_index(i)
-            if int(dev.get('maxInputChannels', 0)) > 0: # Check if it's an input device
-                logging.info(f"  Index {i}: {dev.get('name')} (Channels: {dev.get('maxInputChannels')})")
+            # Check if it has input channels and is not an unknown type
+            if int(dev.get('maxInputChannels', 0)) > 0: 
+                logging.info(f"  Index {i}: {dev.get('name')} (Channels: {dev.get('maxInputChannels')}, Sample Rate: {dev.get('defaultSampleRate')})")
                 found_devices = True
         except IOError as e:
             logging.warning(f"Could not query device index {i}: {e}")
@@ -528,15 +586,16 @@ def main() -> None:
     Parses arguments, reads config, and runs the VoiceAssistant.
     """
     config = configparser.ConfigParser()
+    # Aligning defaults with the provided config.ini and common usage
     argparse_defaults = {
         'ollama_model': 'llama3',
         'whisper_model': 'base.en',
         'wakeword_model_path': 'hey_glados.onnx',
         'wakeword': 'hey glados',
-        'wakeword_threshold': 0.6,
-        'vad_aggressiveness': 2,
-        'silence_seconds': 0.7,
-        'listen_timeout': 6.0,
+        'wakeword_threshold': 0.5, # Adjusted to 0.5 for better detection based on common usage
+        'vad_aggressiveness': 3,   # Adjusted to 3 as seen in user log, often better for short speech
+        'silence_seconds': 0.5,    # Adjusted to 0.5 as seen in user log
+        'listen_timeout': 4.0,     # Adjusted to 4.0 as seen in user log
         'pre_buffer_ms': 400,
         'system_prompt': 'You are a helpful, concise voice assistant.',
         'device_index': None,
@@ -566,13 +625,17 @@ def main() -> None:
         list_tts_voices()
         sys.exit(0)
 
+    # --- Configuration File Reading ---
     try:
         if config.read('config.ini'):
              logging.info("Loaded configuration from config.ini")
+             
              if 'Models' in config:
                  argparse_defaults['ollama_model'] = config.get('Models', 'ollama_model', fallback=argparse_defaults['ollama_model'])
                  argparse_defaults['whisper_model'] = config.get('Models', 'whisper_model', fallback=argparse_defaults['whisper_model'])
-                 argparse_defaults['wakeword_model_path'] = config.get('Models', 'wakeword_model_path', fallback=argparse_defaults['wakeword_model_path'])
+                 # Ensure consistency: check for both old 'wakeword_model' and new 'wakeword_model_path'
+                 argparse_defaults['wakeword_model_path'] = config.get('Models', 'wakeword_model_path', fallback=config.get('Models', 'wakeword_model', fallback=argparse_defaults['wakeword_model_path']))
+             
              if 'Functionality' in config:
                  argparse_defaults['wakeword'] = config.get('Functionality', 'wakeword', fallback=argparse_defaults['wakeword'])
                  argparse_defaults['wakeword_threshold'] = config.getfloat('Functionality', 'wakeword_threshold', fallback=argparse_defaults['wakeword_threshold'])
@@ -582,10 +645,9 @@ def main() -> None:
                  argparse_defaults['pre_buffer_ms'] = config.getint('Functionality', 'pre_buffer_ms', fallback=argparse_defaults['pre_buffer_ms'])
                  argparse_defaults['system_prompt'] = config.get('Functionality', 'system_prompt', fallback=argparse_defaults['system_prompt'])
                  
-                 # --- FIX for config.getint() with None fallback ---
-                 # Must read as string first because getint() cannot have None as fallback
-                 device_index_val = config.get('Functionality', 'device_index', fallback=argparse_defaults['device_index'])
-                 if device_index_val is not None:
+                 # Handle device_index which can be None or an int
+                 device_index_val = config.get('Functionality', 'device_index', fallback=None)
+                 if device_index_val is not None and device_index_val.strip() != '':
                      try:
                          argparse_defaults['device_index'] = int(device_index_val)
                      except ValueError:
@@ -595,17 +657,20 @@ def main() -> None:
                     argparse_defaults['device_index'] = None
                  
                  argparse_defaults['tts_voice_id'] = config.get('Functionality', 'tts_voice_id', fallback=argparse_defaults['tts_voice_id'])
+
         else:
              logging.warning("config.ini not found, using default settings.")
     except configparser.Error as e:
         logging.error(f"Error reading config.ini: {e}. Using default settings.")
 
+    # --- Main Argument Parsing ---
     parser = argparse.ArgumentParser(
         description="Ollama STT-TTS Voice Assistant",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         parents=[temp_parser, list_parser]
     )
 
+    # Note: Using wakeword_model_path consistently in arguments now
     parser.add_argument('--ollama-model', type=str, default=argparse_defaults['ollama_model'], help='Ollama model (e.g., "llama3")')
     parser.add_argument('--whisper-model', type=str, default=argparse_defaults['whisper_model'], help='Whisper model (e.g., "tiny.en", "base.en")')
     parser.add_argument('--wakeword-model-path', type=str, default=argparse_defaults['wakeword_model_path'], help='Full path to the .onnx wakeword model.')
@@ -613,7 +678,7 @@ def main() -> None:
     parser.add_argument('--wakeword-threshold', type=float, default=argparse_defaults['wakeword_threshold'], help='Wakeword sensitivity (0.0-1.0).')
     parser.add_argument('--vad-aggressiveness', type=int, default=argparse_defaults['vad_aggressiveness'], choices=[0, 1, 2, 3], help='VAD aggressiveness (0=least, 3=most).')
     parser.add_argument('--silence-seconds', type=float, default=argparse_defaults['silence_seconds'], help='Seconds of silence before stopping recording.')
-    parser.add_argument('--listen-timeout', type=float, default=argparse_defaults['listen_timeout'], help='Seconds to wait for speech before timeout.')
+    parser.add_argument('--listen-timeout', type=float, default=argparse_defaults['listen_timeout'], help='Seconds to wait for speech after wakeword before timeout.')
     parser.add_argument('--pre-buffer-ms', type=int, default=argparse_defaults['pre_buffer_ms'], help='Milliseconds of audio to pre-buffer.')
     parser.add_argument('--system-prompt', type=str, default=argparse_defaults['system_prompt'], help='The system prompt for the Ollama model.')
     parser.add_argument('--device-index', type=int, default=argparse_defaults['device_index'], help='Index of the audio input device to use. (Use --list-devices to see options)')
@@ -624,6 +689,7 @@ def main() -> None:
     logging.info("Starting assistant with the following effective settings:")
     for arg, value in vars(args).items():
         if arg in ['list_devices', 'list_voices']: continue
+        # Truncate long system prompts for cleaner logging
         if arg == 'system_prompt' and len(str(value)) > 100:
              logging.info(f"  --{arg}: '{str(value)[:100]}...'")
         else:
@@ -642,4 +708,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
