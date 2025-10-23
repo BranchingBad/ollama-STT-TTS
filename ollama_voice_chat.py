@@ -34,8 +34,9 @@ Improvements (Implemented in this version):
 - ENHANCEMENT (v10): Improved logging levels and checks for Ollama connection status.
 - QOL (v11): Ensured instantaneous TTS stop and queue clearing during barge-in for immediate responsiveness.
 - STRUCTURAL (v12): Simplified main run loop by removing redundant in-loop stream restart logic, relying on post-command restart.
-- **ENHANCEMENT (v13): Added error threshold to _tts_worker for robust TTS failure handling.**
-- **QOL (v13): Enhanced startup logging to consistently report the actual audio device index used.**
+- ENHANCEMENT (v13): Added error threshold to _tts_worker for robust TTS failure handling.
+- QOL (v13): Enhanced startup logging to consistently report the actual audio device index used.
+- **QOL (v14): Redacted 'ollama_host' from startup summary logging when using default localhost address.**
 """
 
 import ollama
@@ -64,6 +65,7 @@ CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames per chunk
 INT16_NORMALIZATION = 32768.0 # Normalization factor for int16
 SENTENCE_END_PUNCTUATION = ['.', '?', '!', '\n']
 MAX_TTS_ERRORS = 5           # Max consecutive errors before stopping TTS worker
+DEFAULT_OLLAMA_HOST = 'http://localhost:11434' # Define default for logging check
 
 # --- 2. PyAudio Configuration Check ---
 def check_ollama_connectivity(host: str) -> bool:
@@ -726,7 +728,7 @@ def main() -> None:
         'ollama_model': 'llama3',
         'whisper_model': 'tiny.en', # Changed for performance
         'wakeword_model_path': 'hey_glados.onnx',
-        'ollama_host': 'http://localhost:11434', # NEW DEFAULT
+        'ollama_host': DEFAULT_OLLAMA_HOST, # Use defined constant
         'wakeword': 'hey glados',
         'wakeword_threshold': 0.5, 
         'vad_aggressiveness': 3,   
@@ -828,6 +830,12 @@ def main() -> None:
     logging.info("Starting assistant with the following effective settings:")
     for arg, value in vars(args).items():
         if arg in ['list_devices', 'list_voices']: continue
+        
+        # QOL/Security Enhancement: Suppress default localhost logging
+        if arg == 'ollama_host' and value == DEFAULT_OLLAMA_HOST:
+             logging.info(f"  --{arg}: {value} (Default)")
+             continue
+
         # Truncate long system prompts for cleaner logging
         if arg == 'system_prompt' and len(str(value)) > 100:
              logging.info(f"  --{arg}: '{str(value)[:100]}...'")
