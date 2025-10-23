@@ -278,7 +278,10 @@ class VoiceAssistant:
                     prediction = self.oww_model.predict(audio_np_int16)
 
                     # Check if the desired wakeword score is high
-                    if prediction[self.args.wakeword_model] > self.args.wakeword_threshold:
+                    # --- FIX: Access prediction dictionary using the correct key ---
+                    # The key should match the wakeword model name used in initialization
+                    wakeword_model_key = self.args.wakeword_model # Get the model name from args
+                    if wakeword_model_key in prediction and prediction[wakeword_model_key] > self.args.wakeword_threshold:
                         logging.info(f"Wakeword '{self.args.wakeword}' detected!")
 
                         self.stream.stop_stream()  # Stop listening
@@ -382,7 +385,6 @@ def main() -> None:
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
-        # --- FIX: Corrected format string from %(messages)s to %(message)s ---
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
@@ -430,6 +432,14 @@ def main() -> None:
                         help='Milliseconds of audio to pre-buffer before speech is detected (default: 500).')
 
     args = parser.parse_args()
+
+    # --- Added: Print all arguments ---
+    logging.info("Starting assistant with the following arguments:")
+    for arg, value in vars(args).items():
+        logging.info(f"  --{arg}: {value}")
+    logging.info("-" * 20) # Separator
+    # --- End Added ---
+
 
     try:
         assistant = VoiceAssistant(args)
