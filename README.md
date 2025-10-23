@@ -35,8 +35,8 @@ You must have the Ollama application installed and running.
 
 You need at least one model downloaded for Ollama to use.
 ```bash 
-#We recommend phi3 or Llama 3
-ollama pull phi3
+#We recommend Llama 3
+ollama pull llama3
 
 #Or, use another model
 ollama pull mistral
@@ -126,7 +126,7 @@ Default: ``phi3``
 
 ``--whisper-model``: The Whisper model to use (e.g., "tiny.en", "base.en", "small.en").
 
-Default: ``tiny.en``
+Default: ``base.en``
 
 ``--wakeword-model``: The openwakeword model file to use.
 
