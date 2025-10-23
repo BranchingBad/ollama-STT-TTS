@@ -112,7 +112,8 @@ You can stop the script at any time with Ctrl+C. Special voice commands like "go
 
 You can customize the assistant's behavior using command-line arguments or by editing the ``config.ini`` file. Command-line arguments override settings in ``config.ini``.
 
-Run with defaults (set in ``ollama_voice_chat.py``):
+Run with defaults (loaded from ``config.ini``):
+
 ```Bash
 python ollama_voice_chat.py
 ```
@@ -167,8 +168,7 @@ Configuration File (`config.ini`)
 
 You can also set default values by editing the `config.ini` file in the same directory as the script. This file allows you to configure most of the same options as the command-line arguments, plus the system prompt.
 
-ini
-```bash
+```ini
 [Models]
 ollama_model = llama3       # Default Ollama model
 whisper_model = base.en     # Default Whisper model
