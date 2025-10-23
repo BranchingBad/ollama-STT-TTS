@@ -405,9 +405,26 @@ def main() -> None:
         'system_prompt': 'You are a helpful, concise voice assistant.',
     }
 
+    # Configure logging (moved before config read to capture all messages)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
     try:
         if config.read('config.ini'): # Try reading the file
              logging.info("Loaded configuration from config.ini")
+
+             # --- MODIFICATION START ---
+             # Log the raw values read from config.ini
+             logging.info("--- config.ini values ---")
+             for section in config.sections():
+                 logging.info(f"[{section}]")
+                 for key in config[section]:
+                     logging.info(f"  {key} = {config[section][key]}")
+             logging.info("--------------------------")
+             # --- MODIFICATION END ---
+
              # Update argparse defaults from the loaded config file
              if 'Models' in config:
                  argparse_defaults['ollama_model'] = config.get('Models', 'ollama_model', fallback=argparse_defaults['ollama_model'])
@@ -483,11 +500,8 @@ def main() -> None:
     args = parser.parse_args()
 
 
-    # Configure logging (moved after parsing args in case log level is added later)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    # Configure logging (already done above, just a note)
+    # logging.basicConfig(...)
 
     # Print effective arguments (combination of config and command line)
     logging.info("Starting assistant with the following effective settings:")
