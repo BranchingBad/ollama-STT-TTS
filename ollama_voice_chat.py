@@ -16,6 +16,11 @@ while speaking its response.
 Includes threading.Event 'is_speaking_event' to prevent the assistant
 from listening to its own voice, which could cause false wakeword
 triggers.
+--- MODIFICATION ---
+Reads default configuration from config.ini, allowing command-line
+arguments to override.
+--- MODIFICATION ---
+Reads system_prompt from config.ini or command-line argument.
 """
 
 import ollama
@@ -28,6 +33,7 @@ import argparse
 import logging
 import threading
 import queue
+import configparser # Added for config.ini reading
 from openwakeword.model import Model
 from typing import List, Dict, Optional
 import numpy.typing as npt
@@ -50,13 +56,14 @@ class VoiceAssistant:
     - Text-to-Speech (pyttsx3 in a separate thread)
     """
 
-    SYSTEM_PROMPT = 'You are a helpful, concise voice assistant.'
+    # SYSTEM_PROMPT removed from here, will be passed during initialization
 
     def __init__(self, args: argparse.Namespace) -> None:
         """
         Initializes the assistant, loads models, and sets up audio.
         """
         self.args: argparse.Namespace = args
+        self.system_prompt = args.system_prompt # Store system prompt from args
 
         # Calculate derived audio settings
         self.silence_chunks: int = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
@@ -69,11 +76,22 @@ class VoiceAssistant:
         # Wakeword Model
         logging.info(f"Loading openwakeword model: {args.wakeword_model}...")
         # Load model using wakeword_model_paths and point to the .onnx file
-        self.oww_model = Model(wakeword_model_paths=[f"{args.wakeword_model}.onnx"])
+        # Ensure the .onnx file exists where expected or adjust the path
+        try:
+            self.oww_model = Model(wakeword_model_paths=[f"{args.wakeword_model}.onnx"])
+        except Exception as e:
+            logging.error(f"Error loading openwakeword model '{args.wakeword_model}.onnx': {e}")
+            logging.error("Ensure the model file exists in the current directory or provide the full path.")
+            raise # Re-raise the exception to stop initialization if model fails
 
         # Whisper Model
         logging.info(f"Loading Whisper model: {args.whisper_model}...")
-        self.whisper_model = whisper.load_model(args.whisper_model)
+        try:
+            self.whisper_model = whisper.load_model(args.whisper_model)
+        except Exception as e:
+            logging.error(f"Error loading Whisper model '{args.whisper_model}': {e}")
+            logging.error("Ensure the model name is correct and you have enough memory.")
+            raise
 
         # TTS Engine
         self.tts_engine = pyttsx3.init()
@@ -93,10 +111,11 @@ class VoiceAssistant:
         self.audio = pyaudio.PyAudio()
         self.stream: Optional[pyaudio.Stream] = None
 
-        # Conversation history
+        # Conversation history - Initialize with the configurable system prompt
         self.messages: List[Dict[str, str]] = [
-            {'role': 'system', 'content': self.SYSTEM_PROMPT}
+            {'role': 'system', 'content': self.system_prompt}
         ]
+        logging.info(f"Using system prompt: '{self.system_prompt}'") # Log the prompt being used
 
     def _tts_worker(self) -> None:
         """Dedicated thread for processing TTS tasks."""
@@ -155,6 +174,11 @@ class VoiceAssistant:
         self.messages.append({'role': 'user', 'content': text})
 
         try:
+            # Ensure messages list starts with the system prompt
+            if not self.messages or self.messages[0]['role'] != 'system':
+                 logging.warning("Messages list did not start with system prompt. Re-adding.")
+                 self.messages.insert(0, {'role': 'system', 'content': self.system_prompt})
+
             response = ollama.chat(model=self.args.ollama_model, messages=self.messages)
 
             # Append the assistant's response
@@ -278,8 +302,6 @@ class VoiceAssistant:
                     prediction = self.oww_model.predict(audio_np_int16)
 
                     # Check if the desired wakeword score is high
-                    # --- FIX: Access prediction dictionary using the correct key ---
-                    # The key should match the wakeword model name used in initialization
                     wakeword_model_key = self.args.wakeword_model # Get the model name from args
                     if wakeword_model_key in prediction and prediction[wakeword_model_key] > self.args.wakeword_threshold:
                         logging.info(f"Wakeword '{self.args.wakeword}' detected!")
@@ -331,7 +353,7 @@ class VoiceAssistant:
 
                                 # Reset history, but keep the system prompt
                                 self.messages = [
-                                    {'role': 'system', 'content': self.SYSTEM_PROMPT}
+                                    {'role': 'system', 'content': self.system_prompt}
                                 ]
                                 logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                                 self.stream.start_stream() # Restart for wakeword
@@ -380,65 +402,112 @@ class VoiceAssistant:
 
 def main() -> None:
     """
-    Parses arguments and runs the VoiceAssistant.
+    Parses arguments, reads config, and runs the VoiceAssistant.
     """
-    # Configure logging
+    # --- Read Config File ---
+    config = configparser.ConfigParser()
+    # Provide default values in case config.ini is missing or keys are missing
+    # Added SystemPrompt under Functionality
+    config_defaults = {
+        'Models': {
+            'ollama_model': 'llama3',
+            'whisper_model': 'base.en',
+            'wakeword_model': 'hey_glados',
+        },
+        'Functionality': {
+            'wakeword': 'hey glados',
+            'wakeword_threshold': '0.5',
+            'vad_aggressiveness': '3',
+            'silence_seconds': '0.5',
+            'listen_timeout': '5.0',
+            'pre_buffer_ms': '500',
+            'system_prompt': 'You are a helpful, concise voice assistant.', # Default prompt
+        }
+    }
+    config.read_dict(config_defaults) # Load hardcoded defaults first
+
+    try:
+        if config.read('config.ini'): # Try reading the file, overrides hardcoded defaults if successful
+             logging.info("Loaded configuration from config.ini")
+        else:
+             logging.warning("config.ini not found or empty, using default settings.")
+    except configparser.Error as e:
+        logging.error(f"Error reading config.ini: {e}. Using default settings.")
+        # Reset config to defaults if there was a parsing error
+        config = configparser.ConfigParser()
+        config.read_dict(config_defaults)
+
+
+    # --- Setup Argument Parser with Config Defaults ---
+    parser = argparse.ArgumentParser(
+        description="Ollama STT-TTS Voice Assistant",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter # Shows defaults in help
+    )
+
+    # Model settings - Get defaults from config
+    parser.add_argument('--ollama-model',
+                        type=str,
+                        default=config.get('Models', 'ollama_model', fallback='llama3'),
+                        help='Ollama model (e.g., "llama3", "mistral")')
+    parser.add_argument('--whisper-model',
+                        type=str,
+                        default=config.get('Models', 'whisper_model', fallback='base.en'),
+                        help='Whisper model (e.g., "tiny.en", "base.en")')
+    parser.add_argument('--wakeword-model',
+                        type=str,
+                        default=config.get('Models', 'wakeword_model', fallback='hey_glados'),
+                        help='Openwakeword model name (e.g., "hey_glados"). Assumes .onnx file in cwd.')
+
+    # Functionality settings - Get defaults from config
+    parser.add_argument('--wakeword',
+                        type=str,
+                        default=config.get('Functionality', 'wakeword', fallback='hey glados'),
+                        help='Wakeword phrase.')
+    parser.add_argument('--wakeword-threshold',
+                        type=float,
+                        default=config.getfloat('Functionality', 'wakeword_threshold', fallback=0.5),
+                        help='Wakeword sensitivity (0.0-1.0).')
+    parser.add_argument('--vad-aggressiveness',
+                        type=int,
+                        default=config.getint('Functionality', 'vad_aggressiveness', fallback=3),
+                        choices=[0, 1, 2, 3],
+                        help='VAD aggressiveness (0=least, 3=most).')
+    parser.add_argument('--silence-seconds',
+                        type=float,
+                        default=config.getfloat('Functionality', 'silence_seconds', fallback=0.5),
+                        help='Seconds of silence before stopping recording.')
+    parser.add_argument('--listen-timeout',
+                        type=float,
+                        default=config.getfloat('Functionality', 'listen_timeout', fallback=5.0),
+                        help='Seconds to wait for speech before timeout.')
+    parser.add_argument('--pre-buffer-ms',
+                        type=int,
+                        default=config.getint('Functionality', 'pre_buffer_ms', fallback=500),
+                        help='Milliseconds of audio to pre-buffer (default: 500).')
+    # Added system_prompt argument
+    parser.add_argument('--system-prompt',
+                        type=str,
+                        default=config.get('Functionality', 'system_prompt', fallback='You are a helpful, concise voice assistant.'),
+                        help='The system prompt for the Ollama model.')
+
+    args = parser.parse_args()
+
+
+    # Configure logging (moved after parsing args in case log level is added later)
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
-    parser = argparse.ArgumentParser(description="Ollama STT-TTS Voice Assistant")
-
-    # Model settings
-    parser.add_argument('--ollama-model',
-                        type=str,
-                        default='llama3',
-                        help='The Ollama model to use (e.g., "llama3", "mistral", "phi3")')
-    parser.add_argument('--whisper-model',
-                        type=str,
-                        default='base.en',
-                        help='The Whisper model to use (e.g., "tiny.en", "base.en", "small.en")')
-    parser.add_argument('--wakeword-model',
-                        type=str,
-                        default='hey_glados',
-                        help='The openwakeword model name (e.g., "hey_mycroft_v0.1"). Assumes the .onnx file is in the same directory.')
-
-    # Functionality settings
-    parser.add_argument('--wakeword',
-                        type=str,
-                        default='hey glados',
-                        help='The wakeword phrase to listen for.')
-    parser.add_argument('--wakeword-threshold',
-                        type=float,
-                        default=0.5,
-                        help='Wakeword detection sensitivity (0.0 to 1.0).')
-    parser.add_argument('--vad-aggressiveness',
-                        type=int,
-                        default=3,
-                        choices=[0, 1, 2, 3],
-                        help='VAD aggressiveness (0=least, 3=most aggressive).')
-    parser.add_argument('--silence-seconds',
-                        type=float,
-                        default=0.5,
-                        help='Seconds of silence to wait before stopping recording.')
-    parser.add_argument('--listen-timeout',
-                        type=float,
-                        default=5.0,
-                        help='Seconds to wait for speech to start before timing out.')
-    parser.add_argument('--pre-buffer-ms',
-                        type=int,
-                        default=500,
-                        help='Milliseconds of audio to pre-buffer before speech is detected (default: 500).')
-
-    args = parser.parse_args()
-
-    # --- Added: Print all arguments ---
-    logging.info("Starting assistant with the following arguments:")
+    # Print effective arguments (combination of config and command line)
+    logging.info("Starting assistant with the following effective settings:")
     for arg, value in vars(args).items():
-        logging.info(f"  --{arg}: {value}")
+        # Truncate long system prompt for cleaner logging if necessary
+        if arg == 'system_prompt' and len(str(value)) > 100:
+             logging.info(f"  --{arg}: '{str(value)[:100]}...'")
+        else:
+             logging.info(f"  --{arg}: {value}")
     logging.info("-" * 20) # Separator
-    # --- End Added ---
 
 
     try:
