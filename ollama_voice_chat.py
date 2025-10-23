@@ -22,6 +22,7 @@ Improvements (Implemented in this version):
 - **FIXED (v3): Removed stream stop before command recording to resolve 'Audio stream is not open or active' error.**
 - **ENHANCEMENT (v4): Refined conversation history management for interruptions and errors.**
 - **FIXED (v5): Corrected KeyError: 'pre-buffer-ms' by using 'pre_buffer_ms' for argparse default lookup.**
+- **ENHANCEMENT (v6): Added explicit Whisper model release during cleanup for better resource management.**
 """
 
 import ollama
@@ -619,6 +620,19 @@ class VoiceAssistant:
                 except Exception:
                     pass
             self.stream = None
+        
+        # Release Whisper Model resources (ENHANCEMENT)
+        if hasattr(self, 'whisper_model'):
+            try:
+                # Assuming the Whisper model loaded is a compatible instance that supports a resource release method
+                if hasattr(self.whisper_model, 'release'):
+                    self.whisper_model.release() 
+                elif hasattr(self.whisper_model, 'reset'):
+                    # Some libraries use reset to free resources/state
+                    self.whisper_model.reset()
+                logging.debug("Whisper model resources released.")
+            except Exception as e:
+                logging.warning(f"Error releasing Whisper model resources: {e}")
 
         # Stop the TTS thread gracefully
         self.tts_stop_event.set()
@@ -735,7 +749,6 @@ def main() -> None:
     parser.add_argument('--vad-aggressiveness', type=int, default=argparse_defaults['vad_aggressiveness'], choices=[0, 1, 2, 3], help='VAD aggressiveness (0=least, 3=most).')
     parser.add_argument('--silence-seconds', type=float, default=argparse_defaults['silence_seconds'], help='Seconds of silence before stopping recording.')
     parser.add_argument('--listen-timeout', type=float, default=argparse_defaults['listen_timeout'], help='Seconds to wait for speech after wakeword before timeout.')
-    # FIX APPLIED HERE: Corrected the default lookup key from 'pre-buffer-ms' to 'pre_buffer_ms'
     parser.add_argument('--pre-buffer-ms', type=int, default=argparse_defaults['pre_buffer_ms'], help='Milliseconds of audio to pre-buffer.')
     parser.add_argument('--system-prompt', type=str, default=argparse_defaults['system_prompt'], help='The system prompt for the Ollama model.')
     parser.add_argument('--device-index', type=int, default=argparse_defaults['device_index'], help='Index of the audio input device to use. (Use --list-devices to see options)')
