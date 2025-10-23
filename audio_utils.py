@@ -15,19 +15,19 @@ DEFAULT_OLLAMA_HOST: str = 'http://localhost:11434' # Define default for logging
 MAX_HISTORY_MESSAGES: int = 20    # Max *turns* (user/assistant pairs) to keep (Fallback)
 STREAM_READ_TIMEOUT: float = 0.05 # Timeout for non-blocking read in the main loop (seconds)
 
-# --- 2. Centralized Configuration Defaults ---
+# --- 2. Centralized Configuration Defaults (Matching config.ini) ---
 DEFAULT_SETTINGS: dict[str, Any] = {
     'ollama_model': 'llama3',
     'whisper_model': 'tiny.en',
     'wakeword_model_path': 'hey_glados.onnx',
     'ollama_host': DEFAULT_OLLAMA_HOST,
     'wakeword': 'hey glados',
-    'wakeword_threshold': 0.5, 
-    'vad_aggressiveness': 3,   
+    'wakeword_threshold': 0.45, 
+    'vad_aggressiveness': 2,   
     'silence_seconds': 0.5,    
     'listen_timeout': 4.0,     
     'pre_buffer_ms': 400,
-    'system_prompt': 'You are a helpful, concise voice assistant.',
+    'system_prompt': 'You are a friendly, concise, and intelligent voice assistant named GLaDOS. Keep your responses short and witty.',
     'device_index': None, # Must be None or int
     'tts_voice_id': None,
     'tts_volume': 1.0, 

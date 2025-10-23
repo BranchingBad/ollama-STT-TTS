@@ -676,7 +676,7 @@ class VoiceAssistant:
                 audio_chunk: bytes | None = None
                 try:
                     # Read non-blockingly or with a short timeout to keep the loop responsive
-                    audio_chunk = self.stream.read(CHUNK_SIZE, exception_on_overflow=False, timeout=STREAM_READ_TIMEOUT)
+                    audio_chunk = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 except IOError as e:
                     # Catch specific PyAudio timeout error on non-blocking reads if stream is dry
                     if 'Input overflowed' in str(e) or 'Input blocked' in str(e):
