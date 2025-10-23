@@ -7,6 +7,7 @@ WORKDIR /app
 # Install system-level dependencies required for
 # pyaudio (portaudio19-dev) and pyttsx3 (espeak) on Linux.
 RUN apt-get update && apt-get install -y \
+    build-essential \
     portaudio19-dev \
     espeak \
     && rm -rf /var/lib/apt/lists/*
