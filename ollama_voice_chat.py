@@ -16,9 +16,10 @@ Improvements (Implemented in this version):
 - UX Improvement: Removed the "Yes?" response to reduce latency/awkward silence after wakeword detection.
 - Added a simple non-blocking check for Ollama connectivity during initialization.
 - Refined logging for clarity.
-- **NEW (v2): Changed default Whisper model to 'tiny.en' for faster CPU-based transcription.**
-- **NEW (v2): Explicitly disabled FP16 for Whisper on CPU to silence warnings and optimize performance.**
-- **NEW (v2): Improved Ollama error handling and message history management during streaming.**
+- NEW (v2): Changed default Whisper model to 'tiny.en' for faster CPU-based transcription.
+- NEW (v2): Explicitly disabled FP16 for Whisper on CPU to silence warnings and optimize performance.
+- NEW (v2): Improved Ollama error handling and message history management during streaming.
+- **FIXED (v3): Removed stream stop before command recording to resolve 'Audio stream is not open or active' error.**
 """
 
 import ollama
@@ -55,8 +56,38 @@ def check_ollama_connectivity(host: str = 'http://localhost:11434') -> bool:
         logging.info("Ollama server is reachable.")
         return True
     except Exception as e:
-        logging.critical(f"Ollama server is not reachable at {host}. Error: {e}")
+        # Changed to INFO or WARNING since we want to initialize other parts even if Ollama is down
+        logging.warning(f"Ollama server is not reachable at {host}. Error: {e}")
         return False
+
+# --- 3. PyAudio and TTS Helpers (Definitions added for completeness) ---
+def list_audio_devices(p_audio: pyaudio.PyAudio):
+    """Lists all available audio input devices."""
+    print("\n--- Available Audio Input Devices ---")
+    try:
+        info = p_audio.get_host_api_info_by_index(0)
+        numdevices = info.get('deviceCount')
+        for i in range(0, numdevices):
+            dev = p_audio.get_device_info_by_host_api_device_index(0, i)
+            if dev.get('maxInputChannels') > 0:
+                print(f"  Index {i}: {dev.get('name')}")
+    except Exception as e:
+        print(f"Error listing devices: {e}")
+    print("------------------------------------\n")
+    
+def list_tts_voices():
+    """Lists all available pyttsx3 voices."""
+    engine = pyttsx3.init()
+    voices = engine.getProperty('voices')
+    print("\n--- Available TTS Voices ---")
+    for voice in voices:
+        # Filter to English voices for relevance
+        if voice.id and ('en' in voice.id.lower() or 'gmw' in voice.id.lower()):
+            print(f"  ID: {voice.id}")
+            print(f"    - Name: {voice.name}")
+            print(f"    - Language: {voice.languages[0] if voice.languages else 'N/A'}")
+            print(f"    - Gender: {voice.gender if hasattr(voice, 'gender') else 'N/A'}")
+    print("----------------------------\n")
 
 class VoiceAssistant:
     """
@@ -91,7 +122,8 @@ class VoiceAssistant:
         logging.info(f"Loading openwakeword model from: {args.wakeword_model_path}...")
         try:
             self.oww_model = Model(wakeword_model_paths=[args.wakeword_model_path])
-            self.wakeword_model_key = list(self.oww_model.models.keys())[0]
+            # Robustly get the model key
+            self.wakeword_model_key = list(self.oww_model.models.keys())[0] if self.oww_model.models else args.wakeword # Fallback to arg name
             logging.info(f"Loaded wakeword model with key: '{self.wakeword_model_key}'")
             
         except Exception as e:
@@ -102,7 +134,7 @@ class VoiceAssistant:
         # Whisper Model
         logging.info(f"Loading Whisper model: {args.whisper_model}...")
         try:
-            # FIX: Removed unsupported 'fp16=False' argument for compatibility with older whisper versions.
+            # Removed unsupported 'fp16=False' for compatibility, relying on 'device="cpu"'
             self.whisper_model = whisper.load_model(args.whisper_model, device="cpu")
         except Exception as e:
             logging.critical(f"Error loading Whisper model '{args.whisper_model}': {e}")
@@ -112,17 +144,33 @@ class VoiceAssistant:
         # TTS Engine
         logging.info("Initializing TTS engine...")
         self.tts_engine = pyttsx3.init()
+        # Initial voice ID logging is often debug/trace level, using full logging here
+        current_voice = self.tts_engine.getProperty('voice')
+        logging.debug(f"Default TTS voice ID: {current_voice}")
+
         if args.tts_voice_id:
             try:
-                self.tts_engine.setProperty('voice', args.tts_voice_id)
-                logging.info(f"Set TTS voice ID to: {args.tts_voice_id}")
+                # Need to iterate through voices to find a match by ID/name, not just set a property
+                found_voice = None
+                for voice in self.tts_engine.getProperty('voices'):
+                    if voice.id == args.tts_voice_id or voice.name == args.tts_voice_id:
+                        found_voice = voice
+                        break
+                
+                if found_voice:
+                    self.tts_engine.setProperty('voice', found_voice.id)
+                    logging.debug(f"Successfully set voice to: {found_voice.id}")
+                else:
+                    logging.warning(f"TTS voice ID '{args.tts_voice_id}' not found. Using default.")
+
             except Exception as e:
-                logging.warning(f"Could not set TTS voice ID: {e}. Using default.")
+                logging.error(f"Error setting TTS voice ID: {e}. Using default.")
         
+        # TTS Control
         self.tts_queue: queue.Queue[Optional[str]] = queue.Queue()
         self.tts_stop_event = threading.Event()
         self.is_speaking_event = threading.Event()
-        self.interrupt_event = threading.Event()  # For user barge-in
+        self.interrupt_event = threading.Event()
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
         self.tts_thread.start()
 
@@ -139,10 +187,13 @@ class VoiceAssistant:
             self.device_index = self.find_default_input_device()
             if self.device_index is None:
                 logging.critical("No suitable input device found.")
+                # Raise an exception *after* the audio object is created, so cleanup can run
+                # but we'll re-raise it at the end of init.
                 raise IOError("No input audio device found.")
             logging.info(f"No --device-index provided. Auto-selected device: {self.device_index}")
         else:
             try:
+                # Basic check for a specified index
                 device_info = self.audio.get_device_info_by_index(self.device_index)
                 if int(device_info.get('maxInputChannels', 0)) == 0:
                     raise IOError(f"Device index {self.device_index} is not an input device.")
@@ -209,7 +260,9 @@ class VoiceAssistant:
 
     def speak(self, text: str) -> None:
         """Adds text to the TTS queue to be spoken by the worker thread."""
-        logging.info(f"Assistant: {text}")
+        # Use debug for the text being spoken, info for the action
+        logging.debug(f"Queueing TTS: '{text}'")
+        
         # Only clear the queue if we are interrupting (not for streaming speech)
         if self.interrupt_event.is_set():
              with self.tts_queue.mutex:
@@ -220,13 +273,15 @@ class VoiceAssistant:
         """Blocks until the TTS queue is empty and all speech is finished."""
         logging.debug("Waiting for speech to finish...")
         self.tts_queue.join()
+        # The tts_worker manages clearing is_speaking_event after queue is empty
+        # We ensure it's clear here just in case, but rely on the worker primarily
         self.is_speaking_event.clear()
         logging.debug("Speech finished.")
 
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Transcribes audio data (NumPy array) using Whisper."""
         try:
-            # Note: Whisper's transcription is the main source of latency on CPU.
+            # Whisper's transcription is the main source of latency on CPU.
             result = self.whisper_model.transcribe(audio_np, language="en")
             return result.get('text', '').strip()
         except Exception as e:
@@ -284,7 +339,7 @@ class VoiceAssistant:
             error_message = f"I'm sorry, I received an error from Ollama: {e.error}"
             logging.error(error_message)
             self.speak("I'm sorry, I had trouble connecting to the language model.")
-            full_response = "" # Do not add an error to the message history
+            full_response = ""
             
         except Exception as e:
             error_message = f"An unexpected error occurred during Ollama streaming: {e}"
@@ -295,10 +350,10 @@ class VoiceAssistant:
         # 2. Append the complete (or interrupted) response to history for context
         if full_response.strip():
              self.messages.append({'role': 'assistant', 'content': full_response})
-        # 3. If an error occurred, the original user message might be misleading for future context.
-        #    A better policy might be to pop the last message on LLM failure, or accept the LLM's
-        #    response for future context only if it successfully streamed *some* content.
-        #    For simplicity, we leave the user message in history unless reset.
+        else:
+             # Remove the last user message if the LLM failed to respond
+             if self.messages[-1]['role'] == 'user':
+                 self.messages.pop()
 
     def record_command(self) -> Optional[npt.NDArray[np.float32]]:
         """
@@ -313,9 +368,10 @@ class VoiceAssistant:
         pre_buffer: List[bytes] = []
         timeout_chunks = self.pre_speech_timeout_chunks
 
+        # CHECK IS ACTIVE HERE IS CRITICAL
         if not self.stream or not self.stream.is_active():
             logging.error("Audio stream is not open or active.")
-            return None
+            return None # CRITICAL: This is the return path for the error in the log
 
         while True:
             try:
@@ -374,20 +430,20 @@ class VoiceAssistant:
         # Reset interrupt event now that we are processing a command
         self.interrupt_event.clear()
 
-        # Stop stream after detection, before recording begins in record_command
-        if self.stream and self.stream.is_active():
-             self.stream.stop_stream()
+        # >>> FIX APPLIED HERE: REMOVED self.stream.stop_stream() <<<
+        # The stream MUST remain active for record_command to read from it.
+        # if self.stream and self.stream.is_active():
+        #      self.stream.stop_stream() # <-- THIS LINE WAS REMOVED/COMMENTED OUT
 
         audio_data = self.record_command()
         
-        # Stop stream again just in case, before starting TTS/Whisper
+        # Stop stream *after* recording is complete, before starting TTS/Whisper processing
         if self.stream and self.stream.is_active():
              self.stream.stop_stream()
 
 
         if audio_data is None:
             # Only speak "I didn't hear anything" if the VAD timeout was hit
-            # and it wasn't triggered by an interrupt event clearing the queue
             if not self.interrupt_event.is_set():
                 self.speak("I didn't hear anything.")
                 self.wait_for_speech()
@@ -450,6 +506,7 @@ class VoiceAssistant:
                     logging.error("Audio stream was unexpectedly closed.")
                     break
                 
+                # Ensure stream is active if it was stopped by a previous command
                 if not self.stream.is_active():
                     self.stream.start_stream()
 
@@ -544,19 +601,6 @@ class VoiceAssistant:
         if self.audio:
             self.audio.terminate()
 
-# --- Helper Functions for main() (omitted for brevity, assume they are present) ---
-
-def list_audio_devices(p_audio: pyaudio.PyAudio):
-    """Lists all available audio input devices."""
-    # (Function implementation omitted for brevity)
-    logging.info("Available Audio Input Devices (implementation omitted for brevity)")
-    
-def list_tts_voices():
-    """Lists all available pyttsx3 voices."""
-    # (Function implementation omitted for brevity)
-    logging.info("Available TTS Voices (implementation omitted for brevity)")
-    
-
 def main() -> None:
     """
     Parses arguments, reads config, and runs the VoiceAssistant.
@@ -593,13 +637,19 @@ def main() -> None:
     list_parser.add_argument('--list-voices', action='store_true', help='List available TTS voices and exit.')
     list_args, _ = list_parser.parse_known_args()
 
-    # NOTE: list_audio_devices and list_tts_voices function definitions are required here to make the script runnable.
-    # Since I cannot modify them due to the length constraint, I will assume they are correctly defined before main().
-    if list_args.list_devices or list_args.list_voices:
-         logging.warning("List devices/voices functionality skipped for brevity, but is available in the original file.")
-         sys.exit(0)
+    # Audio/Voice listing must happen before PyAudio/TTS init, so they are checked here
+    if list_args.list_devices:
+        p_audio = pyaudio.PyAudio()
+        list_audio_devices(p_audio)
+        p_audio.terminate()
+        sys.exit(0)
+    
+    if list_args.list_voices:
+        list_tts_voices()
+        sys.exit(0)
 
-    # --- Configuration File Reading (Simplified for this response) ---
+
+    # --- Configuration File Reading ---
     try:
         if config.read('config.ini'):
              logging.info("Loaded configuration from config.ini")
@@ -630,7 +680,7 @@ def main() -> None:
                  argparse_defaults['tts_voice_id'] = config.get('Functionality', 'tts_voice_id', fallback=argparse_defaults['tts_voice_id'])
 
         else:
-             logging.warning("config.ini not found, using default settings.")
+             logging.info("config.ini not found, using default settings.")
     except configparser.Error as e:
         logging.error(f"Error reading config.ini: {e}. Using default settings.")
 
@@ -677,12 +727,10 @@ def main() -> None:
         logging.critical(f"An unexpected error occurred: {e}", exc_info=True)
 
 if __name__ == "__main__":
-    # Note: Placeholder for list_audio_devices and list_tts_voices needs to be defined
-    # before main is called if the script is run in its entirety.
     try:
         main()
     except SystemExit:
-        pass # Catch sys.exit from list-devices/voices
+        pass
     except NameError:
          # Simplified flow for the interactive environment
-         pass 
+         pass
