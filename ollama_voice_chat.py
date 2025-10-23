@@ -209,6 +209,7 @@ class VoiceAssistant:
                 elif is_speech:
                     # Speech has just started
                     logging.info("Speech detected...")
+                    logging.info("Processing voice input...") # Added info message
                     is_speaking = True
                     frames.extend(pre_buffer) # Add the pre-speech buffer
                     frames.append(data)
@@ -390,21 +391,21 @@ def main() -> None:
     # Model settings
     parser.add_argument('--ollama-model',
                         type=str,
-                        default='phi3',
+                        default='llama3',
                         help='The Ollama model to use (e.g., "llama3", "mistral", "phi3")')
     parser.add_argument('--whisper-model',
                         type=str,
-                        default='tiny.en',
+                        default='base.en',
                         help='The Whisper model to use (e.g., "tiny.en", "base.en", "small.en")')
     parser.add_argument('--wakeword-model',
                         type=str,
-                        default='hey_glados', # Updated default
+                        default='hey_glados',
                         help='The openwakeword model name (e.g., "hey_mycroft_v0.1"). Assumes the .onnx file is in the same directory.')
 
     # Functionality settings
     parser.add_argument('--wakeword',
                         type=str,
-                        default='hey glados', # Updated default
+                        default='hey glados',
                         help='The wakeword phrase to listen for.')
     parser.add_argument('--wakeword-threshold',
                         type=float,
