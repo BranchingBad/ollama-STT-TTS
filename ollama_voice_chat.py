@@ -20,6 +20,8 @@ Improvements (Implemented in this version):
 - NEW (v2): Explicitly disabled FP16 for Whisper on CPU to silence warnings and optimize performance.
 - NEW (v2): Improved Ollama error handling and message history management during streaming.
 - **FIXED (v3): Removed stream stop before command recording to resolve 'Audio stream is not open or active' error.**
+- **ENHANCEMENT (v4): Refined conversation history management for interruptions and errors.**
+- **FIXED (v5): Corrected KeyError: 'pre-buffer-ms' by using 'pre_buffer_ms' for argparse default lookup.**
 """
 
 import ollama
@@ -86,7 +88,9 @@ def list_tts_voices():
             print(f"  ID: {voice.id}")
             print(f"    - Name: {voice.name}")
             print(f"    - Language: {voice.languages[0] if voice.languages else 'N/A'}")
-            print(f"    - Gender: {voice.gender if hasattr(voice, 'gender') else 'N/A'}")
+            # pyttsx3 doesn't expose gender consistently, so check for existence
+            gender_info = voice.gender if hasattr(voice, 'gender') else 'N/A'
+            print(f"    - Gender: {gender_info}")
     print("----------------------------\n")
 
 class VoiceAssistant:
@@ -255,6 +259,7 @@ class VoiceAssistant:
                     self.tts_queue.task_done()
                 
                 # Check if the queue is now empty before clearing the speaking event
+                # This logic is crucial for the main loop to know when to listen again
                 if self.tts_queue.empty() and not self.interrupt_event.is_set():
                     self.is_speaking_event.clear()
 
@@ -274,14 +279,14 @@ class VoiceAssistant:
         logging.debug("Waiting for speech to finish...")
         self.tts_queue.join()
         # The tts_worker manages clearing is_speaking_event after queue is empty
-        # We ensure it's clear here just in case, but rely on the worker primarily
-        self.is_speaking_event.clear()
+        self.is_speaking_event.clear() # Ensure clear state after join
         logging.debug("Speech finished.")
 
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Transcribes audio data (NumPy array) using Whisper."""
         try:
             # Whisper's transcription is the main source of latency on CPU.
+            # No-op check to ensure 'en' is the language
             result = self.whisper_model.transcribe(audio_np, language="en")
             return result.get('text', '').strip()
         except Exception as e:
@@ -292,16 +297,36 @@ class VoiceAssistant:
         """Helper to check if a token is sentence-ending punctuation."""
         return any(p in token for p in SENTENCE_END_PUNCTUATION)
 
-    def get_ollama_response_stream(self, text: str) -> None:
+    def _update_history(self, user_text: str, assistant_response: str) -> None:
         """
-        Gets a response from Ollama, maintaining conversation history
-        and streaming the output sentence-by-sentence to the TTS queue.
+        Manages conversation history update, including rollback on empty response.
         """
-        # 1. Append user message for context
-        self.messages.append({'role': 'user', 'content': text})
+        if assistant_response.strip():
+            # Add assistant's response to the history
+            self.messages.append({'role': 'assistant', 'content': assistant_response})
+            logging.debug(f"History updated with assistant response of length {len(assistant_response)}.")
+        else:
+            # Rollback: Remove the last user message if the LLM failed to respond
+            # This prevents a user message from being left dangling with no response
+            if self.messages and self.messages[-1]['role'] == 'user' and self.messages[-1]['content'] == user_text:
+                 self.messages.pop()
+                 logging.warning("LLM response was empty or interrupted, user message rolled back from history.")
+            elif self.messages:
+                 # Should not happen if history management is correct
+                 logging.error(f"Failed to rollback user message: {self.messages[-1]['role']} != 'user' or content mismatch.")
+
+
+    def get_ollama_response_stream(self, user_text: str) -> None:
+        """
+        Gets a response from Ollama, maintains conversation history
+        and streams the output sentence-by-sentence to the TTS queue.
+        """
+        # 1. Append user message for context *before* the API call
+        self.messages.append({'role': 'user', 'content': user_text})
         
         full_response = ""
         sentence_buffer = ""
+        response_stream = None # Initialize to None
 
         try:
             # Ensure messages start with the system prompt
@@ -322,7 +347,10 @@ class VoiceAssistant:
                     break 
                 # --- End interruption check ---
                 
-                token = chunk['message']['content']
+                token = chunk.get('message', {}).get('content', '')
+                if not token:
+                    continue # Skip empty tokens
+
                 full_response += token
                 sentence_buffer += token
 
@@ -338,22 +366,28 @@ class VoiceAssistant:
         except ollama.ResponseError as e:
             error_message = f"I'm sorry, I received an error from Ollama: {e.error}"
             logging.error(error_message)
+            # If the error happened *after* streaming started, a partial response might be in full_response.
+            # We add a spoken error *after* any partial speech.
             self.speak("I'm sorry, I had trouble connecting to the language model.")
-            full_response = ""
+            full_response = "" # Clear full response to prevent bad history update
             
         except Exception as e:
             error_message = f"An unexpected error occurred during Ollama streaming: {e}"
-            logging.error(error_message)
+            logging.error(error_message, exc_info=True)
             self.speak("I'm sorry, I encountered an internal error while thinking.")
-            full_response = ""
+            full_response = "" # Clear full response to prevent bad history update
 
-        # 2. Append the complete (or interrupted) response to history for context
-        if full_response.strip():
-             self.messages.append({'role': 'assistant', 'content': full_response})
-        else:
-             # Remove the last user message if the LLM failed to respond
-             if self.messages[-1]['role'] == 'user':
-                 self.messages.pop()
+        finally:
+            # Close the stream explicitly if it was opened
+            if response_stream:
+                try:
+                    response_stream.close()
+                except Exception as e:
+                    logging.error(f"Error closing Ollama stream: {e}")
+            
+            # 2. Update the history with the complete (or interrupted/failed) response
+            self._update_history(user_text, full_response)
+
 
     def record_command(self) -> Optional[npt.NDArray[np.float32]]:
         """
@@ -368,7 +402,6 @@ class VoiceAssistant:
         pre_buffer: List[bytes] = []
         timeout_chunks = self.pre_speech_timeout_chunks
 
-        # CHECK IS ACTIVE HERE IS CRITICAL
         if not self.stream or not self.stream.is_active():
             logging.error("Audio stream is not open or active.")
             return None # CRITICAL: This is the return path for the error in the log
@@ -430,11 +463,7 @@ class VoiceAssistant:
         # Reset interrupt event now that we are processing a command
         self.interrupt_event.clear()
 
-        # >>> FIX APPLIED HERE: REMOVED self.stream.stop_stream() <<<
         # The stream MUST remain active for record_command to read from it.
-        # if self.stream and self.stream.is_active():
-        #      self.stream.stop_stream() # <-- THIS LINE WAS REMOVED/COMMENTED OUT
-
         audio_data = self.record_command()
         
         # Stop stream *after* recording is complete, before starting TTS/Whisper processing
@@ -444,6 +473,9 @@ class VoiceAssistant:
 
         if audio_data is None:
             # Only speak "I didn't hear anything" if the VAD timeout was hit
+            # Interruption and timeout can both lead to audio_data being None.
+            # We rely on the interrupt_event to distinguish if we need to speak
+            # the timeout message.
             if not self.interrupt_event.is_set():
                 self.speak("I didn't hear anything.")
                 self.wait_for_speech()
@@ -455,9 +487,7 @@ class VoiceAssistant:
         # --- UX Improvement: Move "Thinking..." to *after* transcription ---
         if user_text:
             logging.info(f"You: {user_text}")
-            self.speak("Thinking...")
-            self.wait_for_speech() # Wait for "Thinking..." to finish
-
+            
             user_prompt = user_text.lower().strip().rstrip(".,!?")
 
             if "exit" in user_prompt or "goodbye" in user_prompt:
@@ -470,9 +500,12 @@ class VoiceAssistant:
                 self.messages = [{'role': 'system', 'content': self.system_prompt}]
                 return False # Don't exit
 
+            self.speak("Thinking...")
+            self.wait_for_speech() # Wait for "Thinking..." to finish
+
             logging.info(f"Sending to {self.args.ollama_model}...")
             
-            # Call streaming function
+            # Call streaming function which handles history update
             self.get_ollama_response_stream(user_text)
             
             # Wait for the *entire* streamed response to finish speaking
@@ -529,15 +562,18 @@ class VoiceAssistant:
                         
                         # Stop pyttsx3 speech immediately and clear queue
                         self.tts_engine.stop() 
-                        self.tts_queue.queue.clear()
-                        self.is_speaking_event.clear() # Clear immediately to allow mic to start listening again
+                        # Clear the queue to prevent queued speech from being spoken after the interruption
+                        with self.tts_queue.mutex:
+                            self.tts_queue.queue.clear()
+                        # Clear event immediately so the next run of process_user_command can start listening
+                        self.is_speaking_event.clear() 
                         
                         # Process the new command
                         if self.process_user_command():
                             break # Exit main loop
                         
                         # Restart stream and print ready message
-                        if not self.stream.is_active():
+                        if self.stream and not self.stream.is_active():
                             self.stream.start_stream()
                         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
                     
@@ -557,7 +593,7 @@ class VoiceAssistant:
                         break # Exit main loop
 
                     # Restart stream and print ready message
-                    if not self.stream.is_active():
+                    if self.stream and not self.stream.is_active():
                         self.stream.start_stream()
                     logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
 
@@ -699,6 +735,7 @@ def main() -> None:
     parser.add_argument('--vad-aggressiveness', type=int, default=argparse_defaults['vad_aggressiveness'], choices=[0, 1, 2, 3], help='VAD aggressiveness (0=least, 3=most).')
     parser.add_argument('--silence-seconds', type=float, default=argparse_defaults['silence_seconds'], help='Seconds of silence before stopping recording.')
     parser.add_argument('--listen-timeout', type=float, default=argparse_defaults['listen_timeout'], help='Seconds to wait for speech after wakeword before timeout.')
+    # FIX APPLIED HERE: Corrected the default lookup key from 'pre-buffer-ms' to 'pre_buffer_ms'
     parser.add_argument('--pre-buffer-ms', type=int, default=argparse_defaults['pre_buffer_ms'], help='Milliseconds of audio to pre-buffer.')
     parser.add_argument('--system-prompt', type=str, default=argparse_defaults['system_prompt'], help='The system prompt for the Ollama model.')
     parser.add_argument('--device-index', type=int, default=argparse_defaults['device_index'], help='Index of the audio input device to use. (Use --list-devices to see options)')
