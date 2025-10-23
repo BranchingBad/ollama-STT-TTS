@@ -9,6 +9,8 @@ Uses openwakeword, webrtcvad, Whisper, Ollama, and pyttsx3.
 Refactoring Updates:
 - Core VoiceAssistant class moved here.
 - Configuration and Audio constants/helpers moved to separate files.
+- FIXED: Converted audio stream reading to an asynchronous worker thread
+         to prevent buffer starvation during command recording.
 """
 
 import ollama
@@ -69,7 +71,9 @@ class VoiceAssistant:
         
         # Audio stream control (Shared resource)
         # self.stream_lock = threading.Lock() # Not strictly needed with queue
-        self.stream_buffer: queue.Queue[bytes] = queue.Queue() # Buffer for audio chunks read by the main thread/monitor
+        # Increased buffer size to handle burst data during processing
+        self.stream_buffer: queue.Queue[bytes] = queue.Queue(maxsize=100) # Buffer for audio chunks read by the main thread/monitor
+        self.stream_stop_event = threading.Event() # For stopping the reader thread
 
         # Calculate derived audio settings
         CHUNK_DURATION_MS: int = 30 # Must be 10, 20, or 30 for VAD
@@ -285,6 +289,8 @@ class VoiceAssistant:
         """
         Dedicated thread to continuously monitor the microphone for speech during LLM generation
         or TTS playback, enabling 'barge-in' interruption.
+        
+        Note: This worker now reads from the stream buffer, which is filled by _audio_reader_worker.
         """
         logging.debug("Audio monitor started.")
         
@@ -296,13 +302,13 @@ class VoiceAssistant:
 
             try:
                 # Use a small timeout to allow the thread to stop promptly when is_processing_command clears
+                # Note: This is intended for use during LLM generation and TTS, not for the main recording loop.
                 chunk: bytes = self.stream_buffer.get(timeout=0.1) 
             except queue.Empty:
                 continue
             
             if chunk:
                 # VAD Check - Only run VAD if we're actually generating or speaking
-                # is_processing_command.is_set() is checked in the loop condition
                 if self.is_speaking_event.is_set() or self.is_processing_command.is_set():
                     is_speech = self.vad.is_speech(chunk, RATE)
                     
@@ -312,6 +318,54 @@ class VoiceAssistant:
                 self.stream_buffer.task_done()
                 
         logging.debug("Audio monitor stopped.")
+
+    def _audio_reader_worker(self) -> None:
+        """
+        Dedicated thread to continuously read audio chunks from the PyAudio stream 
+        and feed them into the shared stream_buffer.
+        """
+        logging.debug("Audio reader started.")
+        if not self.stream:
+            logging.error("Audio reader cannot start: Stream is not initialized.")
+            return
+
+        try:
+            while not self.stream_stop_event.is_set():
+                if not self.stream.is_active(): self.stream.start_stream()
+
+                audio_chunk: bytes | None = None
+                try:
+                    # Read non-blockingly or with a short timeout to keep the loop responsive
+                    # Note: Removed STREAM_READ_TIMEOUT as stream.read does not accept a timeout argument 
+                    #       when running synchronously in the worker thread. exception_on_overflow=False 
+                    #       helps keep it responsive.
+                    audio_chunk = self.stream.read(CHUNK_SIZE, exception_on_overflow=False) 
+                except IOError as e:
+                    # Catch specific PyAudio timeout error on non-blocking reads if stream is dry
+                    if 'Input overflowed' in str(e) or 'Input blocked' in str(e):
+                         logging.warning("Audio input overflow detected. Trying to clear buffer.")
+                         continue
+                    # Log other IO errors but continue the loop
+                    logging.warning(f"IOError reading from stream: {e}") 
+                    continue
+                except Exception as e:
+                    logging.error(f"Error reading from audio stream in reader thread: {e}. Stopping reader.")
+                    break
+                    
+                
+                # Shared Buffer Management
+                if audio_chunk:
+                    try:
+                        self.stream_buffer.put_nowait(audio_chunk)
+                    except queue.Full:
+                        # This chunk is dropped, but the reader keeps running
+                        logging.debug("Dropped audio chunk due to full stream buffer.")
+                        
+        except Exception as e:
+            logging.critical(f"FATAL: Unhandled exception in audio reader worker: {e}")
+        
+        logging.debug("Audio reader stopped.")
+
 
     # --- Recording and Transcription ---
 
@@ -327,7 +381,7 @@ class VoiceAssistant:
     def record_command(self) -> npt.NDArray[np.float32] | None:
         """
         Records audio from the user until silence is detected.
-        Reads chunks from the stream buffer (filled by the main loop).
+        Reads chunks from the stream buffer (filled by the dedicated reader thread).
         """
         logging.info("Listening for command...")
         frames: list[bytes] = []
@@ -344,9 +398,14 @@ class VoiceAssistant:
         CHUNK_DURATION_MS: float = 30.0 # Define locally for timeout calculation
         
         while True:
+            # Check for interrupt during recording
+            if self.interrupt_event.is_set():
+                 logging.warning("Recording interrupted (e.g., by manual break).")
+                 return None
+
             try:
-                # Use a small timeout to prevent hard lock if main loop fails
-                data: bytes = self.stream_buffer.get(timeout=0.2) 
+                # Use a small timeout to keep the loop responsive to interrupts/shutdown
+                data: bytes = self.stream_buffer.get(timeout=0.1) 
                 self.stream_buffer.task_done() # Must mark as done here since it's consumed
 
                 is_speech = self.vad.is_speech(data, RATE)
@@ -379,11 +438,12 @@ class VoiceAssistant:
                         return None
             
             except queue.Empty:
-                # Happens if stream reading stops or is very slow
-                logging.warning("No audio chunk received within buffer timeout. Checking for full listening timeout.")
+                # This should rarely happen now if the reader thread is running correctly
+                logging.debug("Buffer empty during command recording, waiting for next chunk...")
                 
                 # Decrement timeout chunks based on time elapsed, not chunks
-                timeout_chunks -= int(0.2 * 1000 / CHUNK_DURATION_MS) 
+                # A 0.1s timeout was used, so decrement by chunks equivalent to 0.1s
+                timeout_chunks -= int(0.1 * 1000 / CHUNK_DURATION_MS) 
                 
                 if timeout_chunks <= 0:
                     logging.warning(f"Recording aborted due to listen timeout after initial silence.")
@@ -649,9 +709,10 @@ class VoiceAssistant:
 
         for attempt in range(MAX_STREAM_RETRIES):
             try:
+                # frames_per_buffer must be specified
                 self.stream = self.audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
                                               input_device_index=self.device_index, frames_per_buffer=CHUNK_SIZE)
-                logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+                logging.debug("Audio stream initialized.")
                 break
             except IOError as e:
                 if attempt < MAX_STREAM_RETRIES - 1:
@@ -663,44 +724,41 @@ class VoiceAssistant:
         
         if not self.stream: return
 
-        # --- Main Loop ---
+        # --- Start Audio Reader Thread ---
+        self.reader_thread = threading.Thread(target=self._audio_reader_worker, daemon=True)
+        self.reader_thread.start()
+        
+        logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+
+        # --- Main Loop (Wakeword Detection) ---
         try:
             while True:
-                if hasattr(self, 'tts_has_failed') and self.tts_has_failed.is_set():
+                if self.tts_has_failed.is_set():
                      logging.critical("TTS engine failed permanently. Shutting down gracefully.")
                      break
+                
+                # Check for stream reader thread failure
+                if self.stream_stop_event.is_set() and not self.reader_thread.is_alive():
+                     logging.critical("Audio reader thread failed. Shutting down.")
+                     break
+                
+                # If processing a command, we don't need wakeword detection, but wait briefly
+                if self.is_processing_command.is_set():
+                    time.sleep(0.01)
+                    continue
 
-                if not self.stream: break
-                if not self.stream.is_active(): self.stream.start_stream()
-
+                # Get the chunk from the buffer (filled by the reader thread)
                 audio_chunk: bytes | None = None
                 try:
-                    # Read non-blockingly or with a short timeout to keep the loop responsive
-                    audio_chunk = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
-                except IOError as e:
-                    # Catch specific PyAudio timeout error on non-blocking reads if stream is dry
-                    if 'Input overflowed' in str(e) or 'Input blocked' in str(e):
-                         logging.warning("Audio input overflow detected. Trying to clear buffer.")
-                         continue
-                    # Log other IO errors but continue the loop
-                    logging.warning(f"IOError reading from stream: {e}") 
-                    continue
-                except Exception as e:
-                    logging.error(f"Error reading from audio stream in main loop: {e}. Stopping.")
-                    break
-                    
-                
-                # Shared Buffer Management
-                if audio_chunk:
-                    try:
-                        self.stream_buffer.put_nowait(audio_chunk)
-                    except queue.Full:
-                        # This chunk is dropped, but the main loop keeps running
-                        logging.debug("Dropped audio chunk due to full stream buffer.")
-                    
-                
-                # Skip wakeword check if processing a command (allows monitor thread to work)
-                if self.is_processing_command.is_set():
+                    # Use a short timeout to prevent blocking the main thread indefinitely
+                    audio_chunk = self.stream_buffer.get(timeout=0.01)
+                    if audio_chunk:
+                        self.stream_buffer.task_done()
+                    else:
+                        continue # Should not happen with get() unless the stream failed
+                        
+                except queue.Empty:
+                    # This is expected if audio data comes slower than we check
                     time.sleep(0.001)
                     continue
 
@@ -728,8 +786,14 @@ class VoiceAssistant:
             self.cleanup()
 
     def cleanup(self) -> None:
-        """Cleans up PyAudio and stops the TTS thread."""
+        """Cleans up PyAudio and stops all worker threads."""
         logging.info("Cleaning up resources...")
+        
+        # Stop Audio Reader Thread
+        if hasattr(self, 'stream_stop_event'):
+            self.stream_stop_event.set()
+            if hasattr(self, 'reader_thread') and self.reader_thread.is_alive():
+                 self.reader_thread.join(timeout=0.5)
         
         if self.stream:
             try:
