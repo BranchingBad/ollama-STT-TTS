@@ -19,7 +19,7 @@ def check_ollama_connectivity(host: str) -> bool:
     """Checks if the Ollama server is running and reachable."""
     try:
         ollama.Client(host=host).list()
-        logging.info("Ollama server is reachable.")
+        logging.info(f"Ollama server is reachable at {host}.")
         return True
     except Exception as e:
         logging.error(f"Ollama server is not reachable at {host}. Error: {e}")
@@ -148,7 +148,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, argparse.Namespace]:
     parser.add_argument('--vad-aggressiveness', type=int, default=argparse_defaults['vad_aggressiveness'], choices=[0, 1, 2, 3], help='VAD aggressiveness (0=least, 3=most).')
     parser.add_argument('--silence-seconds', type=float, default=argparse_defaults['silence_seconds'], help='Seconds of silence before stopping recording.')
     parser.add_argument('--listen-timeout', type=float, default=argparse_defaults['listen_timeout'], help='Seconds to wait for speech after wakeword before timeout.')
-    parser.add_argument('--pre-buffer-ms', type=int, default=argparse_defaults['pre_buffer_ms'], help='Milliseconds of audio to pre-buffer.')
+    parser.add_argument('--pre-buffer-ms', type=int, default=argparse_defaults['pre-buffer-ms'], help='Milliseconds of audio to pre-buffer.')
     parser.add_argument('--system-prompt', type=str, default=argparse_defaults['system_prompt'], help='The system prompt for the Ollama model.')
     parser.add_argument('--device-index', type=int, default=argparse_defaults['device_index'], help='Index of the audio input device to use. (Use --list-devices to see options)')
     parser.add_argument('--tts-voice-id', type=str, default=argparse_defaults['tts_voice_id'], help='ID of the pyttsx3 voice to use. (Use --list-voices to see options)')
@@ -171,12 +171,13 @@ def load_config_and_args() -> Tuple[argparse.Namespace, argparse.Namespace]:
     for arg, value in vars(args).items():
         if arg in ['list_devices', 'list_voices', 'verbose']: continue
         
-        if arg == 'ollama_host' and value == DEFAULT_OLLAMA_HOST:
-             logging.info(f"  --{arg}: {value} (Default)")
-             continue
-
+        # Explicitly log default host
+        is_default_host = arg == 'ollama_host' and value == DEFAULT_OLLAMA_HOST
+        
         if arg == 'system_prompt' and len(str(value)) > 100:
              logging.info(f"  --{arg}: '{str(value)[:100]}...'")
+        elif is_default_host:
+             logging.info(f"  --{arg}: {value} (Default)")
         else:
              logging.info(f"  --{arg}: {value}")
     logging.info("-" * 20)

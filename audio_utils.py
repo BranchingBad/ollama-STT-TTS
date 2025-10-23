@@ -13,6 +13,7 @@ SENTENCE_END_PUNCTUATION: List[str] = ['.', '?', '!', '\n']
 MAX_TTS_ERRORS: int = 5           # Max consecutive errors before stopping TTS worker
 DEFAULT_OLLAMA_HOST: str = 'http://localhost:11434' # Define default for logging check
 MAX_HISTORY_MESSAGES: int = 20    # Max *turns* (user/assistant pairs) to keep (Fallback)
+STREAM_READ_TIMEOUT: float = 0.05 # Timeout for non-blocking read in the main loop (seconds)
 
 # --- 2. Centralized Configuration Defaults ---
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -57,8 +58,19 @@ def list_tts_voices():
     voices = engine.getProperty('voices')
     print("\n--- Available TTS Voices ---")
     for voice in voices:
-        # Filter to English voices for relevance
-        if voice.id and ('en' in voice.id.lower() or 'gmw' in voice.id.lower()):
+        # Check for English or general language ID
+        is_english_or_general = False
+        if voice.id and ('en' in voice.id.lower()):
+            is_english_or_general = True
+        
+        # Check languages property if available
+        if not is_english_or_general and voice.languages:
+             for lang in voice.languages:
+                 if 'en' in lang.lower() or 'gmw' in lang.lower(): # gmw is often a common default/catch-all
+                     is_english_or_general = True
+                     break
+
+        if is_english_or_general:
             print(f"  ID: {voice.id}")
             print(f"    - Name: {voice.name}")
             print(f"    - Language: {voice.languages[0] if voice.languages else 'N/A'}")

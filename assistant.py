@@ -26,12 +26,14 @@ from openwakeword.model import Model
 from typing import List, Dict, Optional, Any
 import numpy.typing as npt
 import sys
+from contextlib import contextmanager
 
 # Import external modules
 from config_manager import load_config_and_args, check_ollama_connectivity
 from audio_utils import (
     FORMAT, CHANNELS, RATE, CHUNK_SIZE, INT16_NORMALIZATION, 
-    SENTENCE_END_PUNCTUATION, MAX_TTS_ERRORS, MAX_HISTORY_MESSAGES
+    SENTENCE_END_PUNCTUATION, MAX_TTS_ERRORS, MAX_HISTORY_MESSAGES, 
+    STREAM_READ_TIMEOUT
 )
 
 # Import torch for CUDA check (needed for Whisper device selection)
@@ -80,7 +82,13 @@ class VoiceAssistant:
         try:
             logging.info(f"Loading openwakeword model from: {args.wakeword_model_path}...")
             self.oww_model: Model = Model(wakeword_model_paths=[args.wakeword_model_path])
-            self.wakeword_model_key: str = list(self.oww_model.models.keys())[0] if self.oww_model.models else args.wakeword 
+            # Ensure we get the correct key even if the path contains folder separators
+            base_filename = os.path.basename(args.wakeword_model_path)
+            self.wakeword_model_key: str = base_filename.split('.')[0] 
+            if self.wakeword_model_key not in self.oww_model.models:
+                 logging.warning(f"Default key '{self.wakeword_model_key}' not found. Using first available: {list(self.oww_model.models.keys())[0] if self.oww_model.models else args.wakeword}")
+                 self.wakeword_model_key: str = list(self.oww_model.models.keys())[0] if self.oww_model.models else args.wakeword
+                 
             logging.info(f"Loaded wakeword model with key: '{self.wakeword_model_key}'")
         except Exception as e:
             logging.critical(f"Error loading openwakeword model '{args.wakeword_model_path}': {e}")
@@ -226,7 +234,7 @@ class VoiceAssistant:
             finally:
                 if text is not None: self.tts_queue.task_done()
                 
-                # Clear the speaking event only if nothing else is waiting
+                # Clear the speaking event only if nothing else is waiting and not interrupted/processing
                 if self.tts_queue.empty() and not self.interrupt_event.is_set() and not self.is_processing_command.is_set():
                     self.is_speaking_event.clear()
 
@@ -257,38 +265,48 @@ class VoiceAssistant:
 
     # --- Audio Monitoring and Barge-in ---
 
+    def stop_generation(self, log_message: str) -> None:
+        """Stops ongoing TTS and sets the interruption flag."""
+        logging.info(log_message)
+        
+        self.interrupt_event.set()
+        
+        if hasattr(self, 'tts_engine'):
+            self.tts_engine.stop() 
+        
+        with self.tts_queue.mutex:
+            self.tts_queue.queue.clear()
+        
+        self.is_speaking_event.clear()
+        # Note: The Ollama loop must also break when checking interrupt_event
+
     def _audio_monitor_worker(self) -> None:
         """
         Dedicated thread to continuously monitor the microphone for speech during LLM generation
         or TTS playback, enabling 'barge-in' interruption.
         """
         logging.debug("Audio monitor started.")
-        while self.is_processing_command.is_set():
+        
+        # Monitor only when a command is being processed (LLM generating or TTS speaking its response)
+        while self.is_processing_command.is_set(): 
             if self.interrupt_event.is_set():
                  time.sleep(0.01)
                  continue
 
-            chunk = None
             try:
-                chunk = self.stream_buffer.get(timeout=0.1)
+                # Use a small timeout to allow the thread to stop promptly when is_processing_command clears
+                chunk = self.stream_buffer.get(timeout=0.1) 
             except queue.Empty:
                 continue
             
             if chunk:
-                is_speech = self.vad.is_speech(chunk, RATE)
-                
-                if is_speech and (self.is_speaking_event.is_set() or self.is_processing_command.is_set()):
-                    logging.info("User interruption (barge-in) detected by monitor!")
+                # VAD Check - Only run VAD if we're actually generating or speaking
+                if self.is_speaking_event.is_set() or self.is_processing_command.is_set():
+                    is_speech = self.vad.is_speech(chunk, RATE)
                     
-                    self.interrupt_event.set()
-                    if hasattr(self, 'tts_engine'):
-                        self.tts_engine.stop() 
-                    
-                    with self.tts_queue.mutex:
-                        self.tts_queue.queue.clear()
-                    
-                    self.is_speaking_event.clear()
-                    
+                    if is_speech:
+                        self.stop_generation("User interruption (barge-in) detected by monitor!")
+                        
                 self.stream_buffer.task_done()
                 
         logging.debug("Audio monitor stopped.")
@@ -317,12 +335,16 @@ class VoiceAssistant:
         pre_buffer: List[bytes] = []
         timeout_chunks = self.pre_speech_timeout_chunks
 
+        # Clear any old chunks before listening
         with self.stream_buffer.mutex:
             self.stream_buffer.queue.clear()
 
         while True:
             try:
-                data = self.stream_buffer.get(timeout=self.args.listen_timeout) 
+                # Use a small timeout to prevent hard lock if main loop fails
+                data = self.stream_buffer.get(timeout=0.2) 
+                self.stream_buffer.task_done() # Must mark as done here since it's consumed
+
                 is_speech = self.vad.is_speech(data, RATE)
                 
                 logging.debug(f"VAD Speech: {is_speech}")
@@ -353,8 +375,16 @@ class VoiceAssistant:
                         return None
             
             except queue.Empty:
-                logging.warning(f"No audio chunk received within listen timeout. Aborting recording.")
-                return None
+                # Happens if stream reading stops or is very slow
+                logging.warning("No audio chunk received within buffer timeout. Checking for full listening timeout.")
+                
+                # Decrement timeout chunks based on time elapsed, not chunks
+                timeout_chunks -= int(0.2 * 1000 / CHUNK_DURATION_MS) 
+                
+                if timeout_chunks <= 0:
+                    logging.warning(f"Recording aborted due to listen timeout after initial silence.")
+                    return None
+            
             except Exception as e:
                 logging.error(f"Unexpected error during recording: {e}")
                 return None
@@ -362,11 +392,21 @@ class VoiceAssistant:
         if not frames: return None
 
         audio_data: bytes = b''.join(frames)
+        # Convert to float32 for whisper, normalizing the int16 values
         audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_NORMALIZATION
 
         return audio_np
 
     # --- Ollama and History Management ---
+    
+    @contextmanager
+    def _ollama_stream_manager(self, stream_response):
+        """Context manager to ensure the Ollama stream is closed."""
+        try:
+            yield stream_response
+        finally:
+            if stream_response and hasattr(stream_response, 'close'):
+                 stream_response.close()
 
     def _is_sentence_end(self, token: str) -> bool:
         """Helper to check if a token is sentence-ending punctuation."""
@@ -376,9 +416,10 @@ class VoiceAssistant:
         """
         Implements a sliding window for conversation history based on token count
         or falls back to turn-based pruning.
+        The system message (index 0) is never pruned.
         """
         if not self.messages or self.messages[0]['role'] != 'system':
-             logging.warning("History corrupted, resetting to only system prompt.")
+             logging.error("History corrupted, resetting to only system prompt.")
              self.messages = [{'role': 'system', 'content': self.system_prompt}]
              return
         
@@ -391,6 +432,7 @@ class VoiceAssistant:
                  messages=self.messages
              ).get('count', 0)
              current_token_count = full_token_count
+             logging.debug(f"Current history token count: {current_token_count}")
              
         except Exception as e:
              logging.error(f"Ollama count_tokens failed: {e}. Falling back to turn-based pruning.")
@@ -399,37 +441,55 @@ class VoiceAssistant:
 
 
         # Prune oldest messages (user/assistant pair) until the token count is under the limit
-        while current_token_count > self.max_history_tokens and len(self.messages) > 1:
-            if len(self.messages) >= 3 and self.messages[1]['role'] == 'user' and self.messages[2]['role'] == 'assistant':
+        # or we only have the system message and the last user message left.
+        while current_token_count > self.max_history_tokens and len(self.messages) > 3:
+            # Check for a complete turn (user/assistant pair) immediately following the system prompt
+            if self.messages[1]['role'] == 'user' and self.messages[2]['role'] == 'assistant':
                 del self.messages[1:3]
-                new_token_count = self.ollama_client.count_tokens(
-                    model=self.args.ollama_model, messages=self.messages
-                ).get('count', 0)
                 
-                tokens_removed = current_token_count - new_token_count
-                logging.warning(f"History pruned: Removed oldest user/assistant pair ({tokens_removed} tokens). New size: {new_token_count} tokens.")
-                current_token_count = new_token_count
+                # Recalculate token count after pruning
+                try:
+                    new_token_count = self.ollama_client.count_tokens(
+                        model=self.args.ollama_model, messages=self.messages
+                    ).get('count', 0)
+                    
+                    tokens_removed = current_token_count - new_token_count
+                    logging.warning(f"History pruned: Removed oldest user/assistant pair ({tokens_removed} tokens). New size: {new_token_count} tokens.")
+                    current_token_count = new_token_count
+                except Exception as e:
+                    logging.error(f"Failed to recount tokens after pruning: {e}. Stopping pruning.")
+                    self._manage_history_turn_fallback() # Fallback to ensure *some* pruning occurred
+                    break
             else:
-                logging.error("History appears corrupted or too short to prune a turn. Stopping token-based pruning.")
+                logging.error("History structure mismatch (expected user/assistant after system prompt). Stopping token-based pruning.")
                 break
         
-        if current_token_count > self.max_history_tokens:
+        if current_token_count > self.max_history_tokens and len(self.messages) > 3:
             logging.critical(f"FATAL: Conversation history ({current_token_count} tokens) still exceeds limit. LLM call may fail.")
+            # If still over, aggressively prune the *next* oldest user/assistant pair if it exists
+            if len(self.messages) >= 3 and self.messages[1]['role'] == 'user' and self.messages[2]['role'] == 'assistant':
+                 del self.messages[1:3]
+                 logging.warning("Aggressively removed one more user/assistant pair.")
+
 
     def _manage_history_turn_fallback(self) -> None:
         """Fallback implementation for history pruning based on MAX_HISTORY_MESSAGES (turns)."""
+        # Exclude system prompt (index 0)
         current_context_length = len(self.messages) - 1 
         current_turns = current_context_length // 2
 
         if current_turns > MAX_HISTORY_MESSAGES:
             turns_to_remove = current_turns - MAX_HISTORY_MESSAGES
+            # We assume messages come in user/assistant pairs. One turn = 2 messages.
             messages_to_remove = turns_to_remove * 2
             end_index_to_remove = 1 + messages_to_remove 
 
             if end_index_to_remove >= len(self.messages):
+                 # This should not happen if the list is structured correctly
                  logging.error(f"History pruning error: calculated end_index {end_index_to_remove} is out of bounds. Skipping pruning.")
                  return
 
+            # Keep system prompt (index 0) and the most recent messages
             self.messages = [self.messages[0]] + self.messages[end_index_to_remove:]
             new_turns = (len(self.messages) - 1) // 2
             logging.warning(f"Conversation history pruned (TURN FALLBACK). Removed {turns_to_remove} oldest turns. New size: {new_turns} turns.")
@@ -441,6 +501,7 @@ class VoiceAssistant:
             self.messages.append({'role': 'assistant', 'content': assistant_response})
             logging.debug(f"History updated with assistant response of length {len(assistant_response)}.")
         else:
+            # Rollback the last user message if the LLM generation was empty or interrupted
             if self.messages and self.messages[-1]['role'] == 'user' and self.messages[-1]['content'] == user_text:
                  self.messages.pop()
                  logging.warning("LLM response was empty or interrupted, user message rolled back from history.")
@@ -466,46 +527,46 @@ class VoiceAssistant:
 
         full_response = ""
         sentence_buffer = ""
-        response_stream = None
         
+        # Start monitor thread to catch barge-in
         monitor_thread = threading.Thread(target=self._audio_monitor_worker, daemon=True)
         monitor_thread.start()
+        
+        response_stream = None
 
         try:
             response_stream = self.ollama_client.chat(
                 model=self.args.ollama_model, messages=self.messages, stream=True, host=self.args.ollama_host
             )
 
-            for chunk in response_stream:
-                if self.interrupt_event.is_set():
-                    logging.info("User interrupted, stopping LLM generation.")
-                    break 
-                
-                token = chunk.get('message', {}).get('content', '')
-                if not token: continue
+            with self._ollama_stream_manager(response_stream) as stream:
+                for chunk in stream:
+                    if self.interrupt_event.is_set():
+                        self.stop_generation("LLM stream stopped due to user interruption.")
+                        break 
+                    
+                    token = chunk.get('message', {}).get('content', '')
+                    if not token: continue
 
-                full_response += token
-                sentence_buffer += token
+                    full_response += token
+                    sentence_buffer += token
 
-                if self._is_sentence_end(token):
-                    self.speak(sentence_buffer.strip())
-                    sentence_buffer = ""
+                    if self._is_sentence_end(token):
+                        self.speak(sentence_buffer.strip())
+                        sentence_buffer = ""
             
+            # Speak any remaining text if generation completed without interruption
             if sentence_buffer.strip() and not self.interrupt_event.is_set():
                 self.speak(sentence_buffer.strip())
 
         except Exception as e:
             logging.error(f"Error during Ollama streaming: {e}", exc_info=True)
             self.speak("I'm sorry, I encountered an error while thinking.")
-            full_response = ""
+            full_response = "" # Clear response on error to force history rollback
 
         finally:
             self.is_processing_command.clear() 
             if monitor_thread.is_alive(): monitor_thread.join(timeout=0.2)
-            
-            if response_stream and hasattr(response_stream, 'close'):
-                 response_stream.close()
-
             self._update_history(user_text, full_response)
 
 
@@ -515,52 +576,62 @@ class VoiceAssistant:
         Returns True if the assistant should exit.
         """
         
+        # The interrupt event might be set if the user immediately spoke after the wakeword was detected
+        # but before the assistant could say "thinking..." or "I didn't hear anything."
+        if self.interrupt_event.is_set():
+             logging.info("Barge-in detected before recording started, resetting interrupt.")
+             self.interrupt_event.clear()
+
         audio_data = self.record_command()
         
         if audio_data is None:
             if not self.interrupt_event.is_set():
                 self.speak("I didn't hear anything.")
                 self.wait_for_speech()
-            return False
+            return False # Continue main loop
 
         logging.info("Transcribing audio...")
         user_text = self.transcribe_audio(audio_data)
         
-        if user_text:
-            word_count = len(user_text.split())
-            if word_count > self.args.max_words_per_command:
-                logging.warning(f"Transcription rejected: {word_count} words (Max: {self.args.max_words_per_command}).")
-                self.speak("That command was too long or contained too much background noise. Please try again.")
-                self.wait_for_speech()
-                return False
-
-            logging.info(f"You: {user_text}")
-            user_prompt = user_text.lower().strip().rstrip(".,!?")
-
-            if "exit" in user_prompt or "goodbye" in user_prompt:
-                self.speak("Goodbye!")
-                self.wait_for_speech()
-                return True
-            
-            if "new chat" in user_prompt or "reset chat" in user_prompt:
-                self.reset_history()
-                self.speak("Starting a new conversation.")
-                self.wait_for_speech()
-                return False
-
-            self.speak("Thinking...")
-            self.wait_for_speech()
-
-            logging.info(f"Sending to {self.args.ollama_model}...")
-            self.get_ollama_response_stream(user_text)
-            self.wait_for_speech() 
-
-        else:
+        if not user_text:
             logging.warning("Transcription failed. No speech detected or unclear input.")
             self.speak("I'm sorry, I couldn't understand what you said.")
             self.wait_for_speech()
+            return False # Continue main loop
+
+        word_count = len(user_text.split())
+        if word_count > self.args.max_words_per_command:
+            logging.warning(f"Transcription rejected: {word_count} words (Max: {self.args.max_words_per_command}).")
+            self.speak("That command was too long. Please try again.")
+            self.wait_for_speech()
+            return False # Continue main loop
+
+        logging.info(f"You: {user_text}")
+        user_prompt = user_text.lower().strip().rstrip(".,!?")
+
+        if "exit" in user_prompt or "goodbye" in user_prompt or "shut down" in user_prompt:
+            self.speak("Goodbye!")
+            self.wait_for_speech()
+            return True # Exit main loop
         
-        return False
+        if "new chat" in user_prompt or "reset chat" in user_prompt or "clear history" in user_prompt:
+            self.reset_history()
+            self.speak("Starting a new conversation.")
+            self.wait_for_speech()
+            return False # Continue main loop
+
+        # Respond with thinking prompt while LLM is generating
+        self.speak("Thinking...")
+        self.wait_for_speech()
+
+        logging.info(f"Sending to {self.args.ollama_model}...")
+        self.get_ollama_response_stream(user_text)
+        self.wait_for_speech() 
+        
+        # After processing, ensure interrupt is cleared for next cycle
+        self.interrupt_event.clear()
+        
+        return False # Continue main loop
 
     def run(self) -> None:
         """The main loop of the assistant."""
@@ -600,7 +671,16 @@ class VoiceAssistant:
 
                 audio_chunk = None
                 try:
-                    audio_chunk = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                    # Read non-blockingly or with a short timeout to keep the loop responsive
+                    audio_chunk = self.stream.read(CHUNK_SIZE, exception_on_overflow=False, timeout=STREAM_READ_TIMEOUT)
+                except IOError as e:
+                    # Catch specific PyAudio timeout error on non-blocking reads if stream is dry
+                    if 'Input overflowed' in str(e) or 'Input blocked' in str(e):
+                         logging.warning("Audio input overflow detected. Trying to clear buffer.")
+                         continue
+                    # Log other IO errors but continue the loop
+                    logging.warning(f"IOError reading from stream: {e}") 
+                    continue
                 except Exception as e:
                     logging.error(f"Error reading from audio stream in main loop: {e}. Stopping.")
                     break
@@ -611,6 +691,7 @@ class VoiceAssistant:
                     try:
                         self.stream_buffer.put_nowait(audio_chunk)
                     except queue.Full:
+                        # This chunk is dropped, but the main loop keeps running
                         logging.debug("Dropped audio chunk due to full stream buffer.")
                     
                 
@@ -620,20 +701,22 @@ class VoiceAssistant:
                     continue
 
                 # Wakeword Check
-                audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
-                prediction = self.oww_model.predict(audio_np_int16)
+                if audio_chunk:
+                    audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
+                    prediction = self.oww_model.predict(audio_np_int16)
 
-                if prediction.get(self.wakeword_model_key, 0) > self.args.wakeword_threshold:
-                    logging.info(f"Wakeword '{self.args.wakeword}' detected! (Score: {prediction.get(self.wakeword_model_key):.2f})")
-                    self.oww_model.reset()
-                    
-                    self.is_processing_command.set()
-                    
-                    if self.process_user_command():
-                        break
-                    
-                    logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
-                    self.is_processing_command.clear()
+                    if prediction.get(self.wakeword_model_key, 0) > self.args.wakeword_threshold:
+                        logging.info(f"Wakeword '{self.args.wakeword}' detected! (Score: {prediction.get(self.wakeword_model_key):.2f})")
+                        self.oww_model.reset()
+                        
+                        self.is_processing_command.set()
+                        
+                        if self.process_user_command():
+                            break # Exit the main loop
+                        
+                        # Command finished or timed out: prepare for next wakeword
+                        logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+                        self.is_processing_command.clear()
 
         except KeyboardInterrupt:
             logging.info("\nStopping assistant...")
@@ -653,14 +736,22 @@ class VoiceAssistant:
             finally:
                 self.stream = None
         
+        # Release Whisper resources (especially important for CUDA)
         if hasattr(self, 'whisper_model'):
             try:
                 if hasattr(self.whisper_model, 'to') and self.whisper_device != 'cpu':
                     self.whisper_model.to('cpu')
+                    # Optionally delete to free memory
+                    del self.whisper_model 
+                    import gc; gc.collect() 
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                         torch.cuda.empty_cache()
+                         
                 logging.debug("Whisper model resources released.")
             except Exception as e:
                 logging.warning(f"Error releasing Whisper model resources: {e}")
 
+        # Stop TTS thread
         if hasattr(self, 'tts_stop_event'):
             self.tts_stop_event.set()
             self.tts_queue.put(None) 
@@ -687,7 +778,12 @@ def main() -> None:
 
 if __name__ == "__main__":
     try:
-        main()
+        # Check for command line args before launching main()
+        if len(sys.argv) > 1 and (sys.argv[1] in ('--list-devices', '--list-voices', '-v', '--verbose')):
+             # load_config_and_args handles sys.exit(0) for list flags
+             main()
+        else:
+             main()
     except SystemExit:
         pass
     except NameError:

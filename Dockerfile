@@ -24,6 +24,5 @@ COPY config_manager.py .
 COPY audio_utils.py .
 COPY config.ini .
 COPY hey_glados.onnx .
-
 # Command to run the application when the container starts
 CMD ["python3", "assistant.py"]
