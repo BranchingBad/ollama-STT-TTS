@@ -8,19 +8,6 @@ This script uses openwakeword for wakeword detection, webrtcvad for silence
 detection, OpenAI's Whisper for transcription, and Ollama for generative AI
 responses.
 
-This updated version includes a non-blocking TTS system using a separate
-thread and queue, allowing the assistant to listen for the wakeword
-while speaking its response.
-
---- MODIFICATION ---
-Includes threading.Event 'is_speaking_event' to prevent the assistant
-from listening to its own voice, which could cause false wakeword
-triggers.
---- MODIFICATION ---
-Reads default configuration from config.ini, allowing command-line
-arguments to override.
---- MODIFICATION ---
-Reads system_prompt from config.ini or command-line argument.
 """
 
 import ollama
@@ -55,8 +42,6 @@ class VoiceAssistant:
     - Language Model (Ollama)
     - Text-to-Speech (pyttsx3 in a separate thread)
     """
-
-    # SYSTEM_PROMPT removed from here, will be passed during initialization
 
     def __init__(self, args: argparse.Namespace) -> None:
         """
@@ -406,88 +391,93 @@ def main() -> None:
     """
     # --- Read Config File ---
     config = configparser.ConfigParser()
-    # Provide default values in case config.ini is missing or keys are missing
-    # Added SystemPrompt under Functionality
-    config_defaults = {
-        'Models': {
-            'ollama_model': 'llama3',
-            'whisper_model': 'base.en',
-            'wakeword_model': 'hey_glados',
-        },
-        'Functionality': {
-            'wakeword': 'hey glados',
-            'wakeword_threshold': '0.5',
-            'vad_aggressiveness': '3',
-            'silence_seconds': '0.5',
-            'listen_timeout': '5.0',
-            'pre_buffer_ms': '500',
-            'system_prompt': 'You are a helpful, concise voice assistant.', # Default prompt
-        }
+    # Define fallback defaults for argparse, matching config.ini
+    argparse_defaults = {
+        'ollama_model': 'llama3',
+        'whisper_model': 'base.en',
+        'wakeword_model': 'hey_glados',
+        'wakeword': 'hey glados',
+        'wakeword_threshold': 0.6,
+        'vad_aggressiveness': 2,
+        'silence_seconds': 0.7,
+        'listen_timeout': 6.0,
+        'pre_buffer_ms': 400,
+        'system_prompt': 'You are a helpful, concise voice assistant.',
     }
-    config.read_dict(config_defaults) # Load hardcoded defaults first
 
     try:
-        if config.read('config.ini'): # Try reading the file, overrides hardcoded defaults if successful
+        if config.read('config.ini'): # Try reading the file
              logging.info("Loaded configuration from config.ini")
+             # Update argparse defaults from the loaded config file
+             if 'Models' in config:
+                 argparse_defaults['ollama_model'] = config.get('Models', 'ollama_model', fallback=argparse_defaults['ollama_model'])
+                 argparse_defaults['whisper_model'] = config.get('Models', 'whisper_model', fallback=argparse_defaults['whisper_model'])
+                 argparse_defaults['wakeword_model'] = config.get('Models', 'wakeword_model', fallback=argparse_defaults['wakeword_model'])
+             if 'Functionality' in config:
+                 argparse_defaults['wakeword'] = config.get('Functionality', 'wakeword', fallback=argparse_defaults['wakeword'])
+                 argparse_defaults['wakeword_threshold'] = config.getfloat('Functionality', 'wakeword_threshold', fallback=argparse_defaults['wakeword_threshold'])
+                 argparse_defaults['vad_aggressiveness'] = config.getint('Functionality', 'vad_aggressiveness', fallback=argparse_defaults['vad_aggressiveness'])
+                 argparse_defaults['silence_seconds'] = config.getfloat('Functionality', 'silence_seconds', fallback=argparse_defaults['silence_seconds'])
+                 argparse_defaults['listen_timeout'] = config.getfloat('Functionality', 'listen_timeout', fallback=argparse_defaults['listen_timeout'])
+                 argparse_defaults['pre_buffer_ms'] = config.getint('Functionality', 'pre_buffer_ms', fallback=argparse_defaults['pre_buffer_ms'])
+                 argparse_defaults['system_prompt'] = config.get('Functionality', 'system_prompt', fallback=argparse_defaults['system_prompt'])
         else:
-             logging.warning("config.ini not found or empty, using default settings.")
+             logging.warning("config.ini not found or empty, using default settings defined in script.")
     except configparser.Error as e:
-        logging.error(f"Error reading config.ini: {e}. Using default settings.")
-        # Reset config to defaults if there was a parsing error
-        config = configparser.ConfigParser()
-        config.read_dict(config_defaults)
+        logging.error(f"Error reading config.ini: {e}. Using default settings defined in script.")
+        # Keep using the hardcoded argparse_defaults if config reading fails
 
 
-    # --- Setup Argument Parser with Config Defaults ---
+    # --- Setup Argument Parser with Defaults (from config.ini or hardcoded) ---
     parser = argparse.ArgumentParser(
         description="Ollama STT-TTS Voice Assistant",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter # Shows defaults in help
     )
 
-    # Model settings - Get defaults from config
+    # Model settings
     parser.add_argument('--ollama-model',
                         type=str,
-                        default=config.get('Models', 'ollama_model', fallback='llama3'),
+                        default=argparse_defaults['ollama_model'],
                         help='Ollama model (e.g., "llama3", "mistral")')
     parser.add_argument('--whisper-model',
                         type=str,
-                        default=config.get('Models', 'whisper_model', fallback='base.en'),
+                        default=argparse_defaults['whisper_model'],
                         help='Whisper model (e.g., "tiny.en", "base.en")')
     parser.add_argument('--wakeword-model',
                         type=str,
-                        default=config.get('Models', 'wakeword_model', fallback='hey_glados'),
+                        default=argparse_defaults['wakeword_model'],
                         help='Openwakeword model name (e.g., "hey_glados"). Assumes .onnx file in cwd.')
 
-    # Functionality settings - Get defaults from config
+    # Functionality settings
     parser.add_argument('--wakeword',
                         type=str,
-                        default=config.get('Functionality', 'wakeword', fallback='hey glados'),
+                        default=argparse_defaults['wakeword'],
                         help='Wakeword phrase.')
     parser.add_argument('--wakeword-threshold',
                         type=float,
-                        default=config.getfloat('Functionality', 'wakeword_threshold', fallback=0.5),
+                        default=argparse_defaults['wakeword_threshold'],
                         help='Wakeword sensitivity (0.0-1.0).')
     parser.add_argument('--vad-aggressiveness',
                         type=int,
-                        default=config.getint('Functionality', 'vad_aggressiveness', fallback=3),
+                        default=argparse_defaults['vad_aggressiveness'],
                         choices=[0, 1, 2, 3],
                         help='VAD aggressiveness (0=least, 3=most).')
     parser.add_argument('--silence-seconds',
                         type=float,
-                        default=config.getfloat('Functionality', 'silence_seconds', fallback=0.5),
+                        default=argparse_defaults['silence_seconds'],
                         help='Seconds of silence before stopping recording.')
     parser.add_argument('--listen-timeout',
                         type=float,
-                        default=config.getfloat('Functionality', 'listen_timeout', fallback=5.0),
+                        default=argparse_defaults['listen_timeout'],
                         help='Seconds to wait for speech before timeout.')
     parser.add_argument('--pre-buffer-ms',
                         type=int,
-                        default=config.getint('Functionality', 'pre_buffer_ms', fallback=500),
-                        help='Milliseconds of audio to pre-buffer (default: 500).')
+                        default=argparse_defaults['pre_buffer_ms'],
+                        help='Milliseconds of audio to pre-buffer.')
     # Added system_prompt argument
     parser.add_argument('--system-prompt',
                         type=str,
-                        default=config.get('Functionality', 'system_prompt', fallback='You are a helpful, concise voice assistant.'),
+                        default=argparse_defaults['system_prompt'],
                         help='The system prompt for the Ollama model.')
 
     args = parser.parse_args()
