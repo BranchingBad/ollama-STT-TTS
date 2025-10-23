@@ -159,12 +159,12 @@ Default: ``5.0``
 
 Default: ``500``
     
-Configuration File (``config.ini``)
+CConfiguration File (`config.ini`)
 
-You can also set default values by editing the ``config.ini`` file in the same directory as the script. This file allows you to configure most of the same options as the command-line arguments, plus the system prompt.
+You can also set default values by editing the `config.ini` file in the same directory as the script. This file allows you to configure most of the same options as the command-line arguments, plus the system prompt.
 
 Ini, TOML
-```Bash
+```bash
 [Models]
 ollama_model = llama3       # Default Ollama model
 whisper_model = base.en     # Default Whisper model
@@ -180,4 +180,4 @@ pre_buffer_ms = 400         # Audio pre-buffering duration
 system_prompt = You are a helpful, concise voice assistant. # The initial prompt for Ollama
 ```
 
-Note: Currently, the ``ollama_voice_chat.py`` script does not read ``config.ini``. The defaults are set directly in the script via ``argparse``. To use ``config.ini``, the script would need to be modified to read this file (e.g., using Python's ``configparser``). If modified, command-line arguments should still take precedence.
+**Note**: The ``ollama_voice_chat``.py script reads default settings from ``config.ini``. Any command-line arguments provided when running the script will override the values set in this file.
