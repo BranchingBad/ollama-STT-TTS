@@ -14,6 +14,17 @@ Improvements:
 - Added "Thinking..." feedback to reduce perceived latency.
 - Added verbose logging option (-v, --verbose).
 - Fixed wakeword model path to accept a full path.
+
+Further Improvements (in this version):
+- Implemented Ollama streaming for sentence-by-sentence TTS output,
+  dramatically
+  reducing time-to-first-speech.
+- Made "Thinking..." feedback more accurate by placing it *after*
+  transcription.
+- Made wakeword model key detection robust by querying the loaded model
+  directly,
+  instead of parsing filenames.
+- Made audio device listing more robust.
 """
 
 import ollama
@@ -30,7 +41,7 @@ import configparser
 from openwakeword.model import Model
 from typing import List, Dict, Optional
 import numpy.typing as npt
-import sys # Added for sys.exit
+import sys
 
 # --- 1. Audio Settings (Constants) ---
 FORMAT = pyaudio.paInt16       # 16-bit audio
@@ -39,6 +50,7 @@ RATE = 16000                 # 16kHz sample rate
 CHUNK_DURATION_MS = 30       # 30ms chunks for VAD
 CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames per chunk
 INT16_NORMALIZATION = 32768.0 # Normalization factor for int16
+SENTENCE_END_PUNCTUATION = ['.', '?', '!', '\n']
 
 class VoiceAssistant:
     """
@@ -68,8 +80,13 @@ class VoiceAssistant:
         # Wakeword Model
         logging.info(f"Loading openwakeword model from: {args.wakeword_model_path}...")
         try:
-            # Load model using the full path provided
             self.oww_model = Model(wakeword_model_paths=[args.wakeword_model_path])
+            
+            # --- IMPROVEMENT: Robust wakeword key detection ---
+            # Instead of parsing the filename, ask the model what key it loaded.
+            self.wakeword_model_key = list(self.oww_model.models.keys())[0]
+            logging.info(f"Loaded wakeword model with key: '{self.wakeword_model_key}'")
+            
         except Exception as e:
             logging.error(f"Error loading openwakeword model '{args.wakeword_model_path}': {e}")
             logging.error("Ensure the .onnx model file exists at the specified path.")
@@ -87,7 +104,6 @@ class VoiceAssistant:
         # TTS Engine
         logging.info("Initializing TTS engine...")
         self.tts_engine = pyttsx3.init()
-        # Apply custom voice if specified
         if args.tts_voice_id:
             try:
                 self.tts_engine.setProperty('voice', args.tts_voice_id)
@@ -111,14 +127,12 @@ class VoiceAssistant:
         # Validate and select the input device
         self.device_index = args.device_index
         if self.device_index is None:
-            # If no device is specified, try to find a reasonable default
             self.device_index = self.find_default_input_device()
             if self.device_index is None:
                 logging.critical("No suitable input device found.")
                 raise IOError("No input audio device found.")
             logging.info(f"No --device-index provided. Auto-selected device: {self.device_index}")
         else:
-            # Verify the specified device index is valid
             try:
                 self.audio.get_device_info_by_index(self.device_index)
             except IOError as e:
@@ -126,7 +140,6 @@ class VoiceAssistant:
                 logging.critical("Use --list-devices to see available devices.")
                 raise
             logging.info(f"Using specified audio device index: {self.device_index}")
-
 
         # Conversation history
         self.messages: List[Dict[str, str]] = [
@@ -187,36 +200,62 @@ class VoiceAssistant:
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Transcribes audio data (NumPy array) using Whisper."""
         try:
-            result = self.whisper_model.transcribe(audio_np, language="en") # Added language hint
+            result = self.whisper_model.transcribe(audio_np, language="en")
             return result.get('text', '').strip()
         except Exception as e:
             logging.error(f"Whisper transcription error: {e}")
             return ""
 
-    def get_ollama_response(self, text: str) -> str:
+    def _is_sentence_end(self, token: str) -> bool:
+        """Helper to check if a token is sentence-ending punctuation."""
+        return any(p in token for p in SENTENCE_END_PUNCTUATION)
+
+    def get_ollama_response_stream(self, text: str) -> None:
         """
-        Gets a response from Ollama, maintaining conversation history.
+        Gets a response from Ollama, maintaining conversation history
+        and streaming the output sentence-by-sentence to the TTS queue.
         """
         self.messages.append({'role': 'user', 'content': text})
+        
+        full_response = ""
+        sentence_buffer = ""
 
         try:
             if not self.messages or self.messages[0]['role'] != 'system':
                  logging.warning("Messages list did not start with system prompt. Re-adding.")
                  self.messages.insert(0, {'role': 'system', 'content': self.system_prompt})
 
-            response = ollama.chat(model=self.args.ollama_model, messages=self.messages)
+            # --- IMPROVEMENT: Use stream=True ---
+            response_stream = ollama.chat(
+                model=self.args.ollama_model,
+                messages=self.messages,
+                stream=True
+            )
 
-            assistant_reply = response['message']['content']
-            self.messages.append({'role': 'assistant', 'content': assistant_reply})
+            for chunk in response_stream:
+                token = chunk['message']['content']
+                full_response += token
+                sentence_buffer += token
 
-            return assistant_reply
+                if self._is_sentence_end(token):
+                    # We have a full sentence, speak it.
+                    self.speak(sentence_buffer.strip())
+                    sentence_buffer = ""
+            
+            # Speak any remaining text in the buffer
+            if sentence_buffer.strip():
+                self.speak(sentence_buffer.strip())
+
+            # Add the complete response to history
+            self.messages.append({'role': 'assistant', 'content': full_response})
 
         except ollama.ResponseError as e:
             logging.error(f"Ollama Response Error: {e.error}")
-            return "I'm sorry, I received an error from Ollama. Please check the console."
+            self.speak("I'm sorry, I received an error from Ollama. Please check the console.")
         except Exception as e:
             logging.error(f"Ollama error: {e}")
-            return "I'm sorry, I couldn't connect to Ollama. Is the Ollama server running?"
+            self.speak("I'm sorry, I couldn't connect to Ollama. Is the Ollama server running?")
+
 
     def record_command(self) -> Optional[npt.NDArray[np.float32]]:
         """
@@ -271,8 +310,6 @@ class VoiceAssistant:
                 return None
 
         audio_data: bytes = b''.join(frames)
-        
-        # Convert raw 16-bit audio data to a 32-bit float NumPy array
         audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_NORMALIZATION
 
         return audio_np
@@ -287,7 +324,7 @@ class VoiceAssistant:
                                           channels=CHANNELS,
                                           rate=RATE,
                                           input=True,
-                                          input_device_index=self.device_index, # Use selected device
+                                          input_device_index=self.device_index,
                                           frames_per_buffer=CHUNK_SIZE)
 
             logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
@@ -308,12 +345,10 @@ class VoiceAssistant:
                     audio_np_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
                     prediction = self.oww_model.predict(audio_np_int16)
 
-                    # Use the *base name* of the model path for the prediction key
-                    wakeword_model_key = self.args.wakeword_model_path.split('/')[-1].split('.')[0]
-
-                    if wakeword_model_key in prediction and prediction[wakeword_model_key] > self.args.wakeword_threshold:
+                    # --- IMPROVEMENT: Use robust key and safer .get() ---
+                    if prediction.get(self.wakeword_model_key, 0) > self.args.wakeword_threshold:
                         logging.info(f"Wakeword '{self.args.wakeword}' detected!")
-                        self.oww_model.reset() # Reset model state
+                        self.oww_model.reset()
 
                         self.stream.stop_stream()
                         self.speak("Yes?")
@@ -330,17 +365,16 @@ class VoiceAssistant:
                             self.stream.start_stream()
                             continue
                         
-                        # --- ADDED: "Thinking..." feedback ---
-                        # Give immediate feedback that the command is being processed
-                        self.speak("Thinking...")
-                        self.wait_for_speech() # Wait for "Thinking..." to finish
-                        # --- END ADDED ---
-
                         logging.info("Transcribing audio...")
                         user_text = self.transcribe_audio(audio_data)
 
                         if user_text:
                             logging.info(f"You: {user_text}")
+                            
+                            # --- IMPROVEMENT: Move "Thinking..." to *after* transcription ---
+                            # This feels more responsive and accurate.
+                            self.speak("Thinking...")
+                            
                             user_prompt = user_text.lower().strip().rstrip(".,!?")
 
                             if "exit" in user_prompt or "goodbye" in user_prompt:
@@ -358,11 +392,14 @@ class VoiceAssistant:
                                 continue
 
                             logging.info(f"Sending to {self.args.ollama_model}...")
-                            ollama_reply = self.get_ollama_response(user_text)
-                            self.speak(ollama_reply)
+                            
+                            # --- IMPROVEMENT: Call streaming function ---
+                            # This function now handles its own speech.
+                            self.get_ollama_response_stream(user_text)
+                            
+                            # Wait for the *entire* streamed response to finish speaking
+                            self.wait_for_speech() 
 
-                            if "I'm sorry" in ollama_reply:
-                                self.wait_for_speech()
                         else:
                             logging.warning("Transcription failed.")
                             self.speak("I'm sorry, I didn't catch that.")
@@ -399,8 +436,9 @@ class VoiceAssistant:
 def list_audio_devices(p_audio: pyaudio.PyAudio):
     """Lists all available audio input devices."""
     logging.info("Available Audio Input Devices:")
-    info = p_audio.get_host_api_info_by_index(0)
-    num_devices = info.get('deviceCount', 0)
+    
+    # --- IMPROVEMENT: Iterate all device indices, not just from one API ---
+    num_devices = p_audio.get_device_count()
     
     found_devices = False
     for i in range(num_devices):
@@ -434,12 +472,11 @@ def main() -> None:
     """
     Parses arguments, reads config, and runs the VoiceAssistant.
     """
-    # --- Read Config File ---
     config = configparser.ConfigParser()
     argparse_defaults = {
         'ollama_model': 'llama3',
         'whisper_model': 'base.en',
-        'wakeword_model_path': 'hey_glados.onnx', # Changed key
+        'wakeword_model_path': 'hey_glados.onnx',
         'wakeword': 'hey glados',
         'wakeword_threshold': 0.6,
         'vad_aggressiveness': 2,
@@ -447,24 +484,20 @@ def main() -> None:
         'listen_timeout': 6.0,
         'pre_buffer_ms': 400,
         'system_prompt': 'You are a helpful, concise voice assistant.',
-        'device_index': None, # Added
-        'tts_voice_id': None, # Added
+        'device_index': None,
+        'tts_voice_id': None,
     }
 
-    # Temporary parser to check for --verbose before logging is configured
     temp_parser = argparse.ArgumentParser(add_help=False)
     temp_parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose DEBUG logging')
     temp_args, _ = temp_parser.parse_known_args()
 
-    # Configure logging
     log_level = logging.DEBUG if temp_args.verbose else logging.INFO
     logging.basicConfig(
         level=log_level,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
-    # --- Check for device/voice listing flags ---
-    # These flags will list devices and exit, not run the assistant.
     list_parser = argparse.ArgumentParser(add_help=False)
     list_parser.add_argument('--list-devices', action='store_true', help='List available audio input devices and exit.')
     list_parser.add_argument('--list-voices', action='store_true', help='List available TTS voices and exit.')
@@ -478,14 +511,13 @@ def main() -> None:
         list_tts_voices()
         sys.exit(0)
 
-    # --- Read Config File ---
     try:
         if config.read('config.ini'):
              logging.info("Loaded configuration from config.ini")
              if 'Models' in config:
                  argparse_defaults['ollama_model'] = config.get('Models', 'ollama_model', fallback=argparse_defaults['ollama_model'])
                  argparse_defaults['whisper_model'] = config.get('Models', 'whisper_model', fallback=argparse_defaults['whisper_model'])
-                 argparse_defaults['wakeword_model_path'] = config.get('Models', 'wakeword_model_path', fallback=argparse_defaults['wakeword_model_path']) # Changed key
+                 argparse_defaults['wakeword_model_path'] = config.get('Models', 'wakeword_model_path', fallback=argparse_defaults['wakeword_model_path'])
              if 'Functionality' in config:
                  argparse_defaults['wakeword'] = config.get('Functionality', 'wakeword', fallback=argparse_defaults['wakeword'])
                  argparse_defaults['wakeword_threshold'] = config.getfloat('Functionality', 'wakeword_threshold', fallback=argparse_defaults['wakeword_threshold'])
@@ -494,27 +526,22 @@ def main() -> None:
                  argparse_defaults['listen_timeout'] = config.getfloat('Functionality', 'listen_timeout', fallback=argparse_defaults['listen_timeout'])
                  argparse_defaults['pre_buffer_ms'] = config.getint('Functionality', 'pre_buffer_ms', fallback=argparse_defaults['pre_buffer_ms'])
                  argparse_defaults['system_prompt'] = config.get('Functionality', 'system_prompt', fallback=argparse_defaults['system_prompt'])
-                 argparse_defaults['device_index'] = config.getint('Functionality', 'device_index', fallback=argparse_defaults['device_index']) # Added
-                 argparse_defaults['tts_voice_id'] = config.get('Functionality', 'tts_voice_id', fallback=argparse_defaults['tts_voice_id']) # Added
+                 argparse_defaults['device_index'] = config.getint('Functionality', 'device_index', fallback=argparse_defaults['device_index'])
+                 argparse_defaults['tts_voice_id'] = config.get('Functionality', 'tts_voice_id', fallback=argparse_defaults['tts_voice_id'])
         else:
              logging.warning("config.ini not found, using default settings.")
     except configparser.Error as e:
         logging.error(f"Error reading config.ini: {e}. Using default settings.")
 
-
-    # --- Setup Full Argument Parser ---
     parser = argparse.ArgumentParser(
         description="Ollama STT-TTS Voice Assistant",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        parents=[temp_parser, list_parser] # Inherit --verbose, --list-devices, --list-voices
+        parents=[temp_parser, list_parser]
     )
 
-    # Model settings
     parser.add_argument('--ollama-model', type=str, default=argparse_defaults['ollama_model'], help='Ollama model (e.g., "llama3")')
     parser.add_argument('--whisper-model', type=str, default=argparse_defaults['whisper_model'], help='Whisper model (e.g., "tiny.en", "base.en")')
-    parser.add_argument('--wakeword-model-path', type=str, default=argparse_defaults['wakeword_model_path'], help='Full path to the .onnx wakeword model.') # Changed
-
-    # Functionality settings
+    parser.add_argument('--wakeword-model-path', type=str, default=argparse_defaults['wakeword_model_path'], help='Full path to the .onnx wakeword model.')
     parser.add_argument('--wakeword', type=str, default=argparse_defaults['wakeword'], help='Wakeword phrase.')
     parser.add_argument('--wakeword-threshold', type=float, default=argparse_defaults['wakeword_threshold'], help='Wakeword sensitivity (0.0-1.0).')
     parser.add_argument('--vad-aggressiveness', type=int, default=argparse_defaults['vad_aggressiveness'], choices=[0, 1, 2, 3], help='VAD aggressiveness (0=least, 3=most).')
@@ -522,17 +549,14 @@ def main() -> None:
     parser.add_argument('--listen-timeout', type=float, default=argparse_defaults['listen_timeout'], help='Seconds to wait for speech before timeout.')
     parser.add_argument('--pre-buffer-ms', type=int, default=argparse_defaults['pre_buffer_ms'], help='Milliseconds of audio to pre-buffer.')
     parser.add_argument('--system-prompt', type=str, default=argparse_defaults['system_prompt'], help='The system prompt for the Ollama model.')
-    
-    # New Device and Voice settings
     parser.add_argument('--device-index', type=int, default=argparse_defaults['device_index'], help='Index of the audio input device to use. (Use --list-devices to see options)')
     parser.add_argument('--tts-voice-id', type=str, default=argparse_defaults['tts_voice_id'], help='ID of the pyttsx3 voice to use. (Use --list-voices to see options)')
 
     args = parser.parse_args()
 
-    # --- Print effective settings ---
     logging.info("Starting assistant with the following effective settings:")
     for arg, value in vars(args).items():
-        if arg in ['list_devices', 'list_voices']: continue # Don't log action flags
+        if arg in ['list_devices', 'list_voices']: continue
         if arg == 'system_prompt' and len(str(value)) > 100:
              logging.info(f"  --{arg}: '{str(value)[:100]}...'")
         else:
@@ -549,6 +573,5 @@ def main() -> None:
     except Exception as e:
         logging.critical(f"An unexpected error occurred: {e}", exc_info=True)
 
-# --- Script Entry Point ---
 if __name__ == "__main__":
     main()
