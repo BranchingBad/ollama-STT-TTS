@@ -104,6 +104,8 @@ Speak your prompt (e.g., "What's the capital of France?"). The script will liste
 
 The script will transcribe your audio, send it to Ollama, and speak the response back to you. It will then automatically return to listening for the wakeword.
 
+**Note:** When running Whisper on a CPU, you may see a warning like UserWarning: FP16 is not supported on CPU; using FP32 instead. This is expected behavior and does not indicate an error.
+
 You can stop the script at any time with Ctrl+C. Special voice commands like "goodbye" or "exit" will also stop the script, and "new chat" or "reset chat" will clear the conversation history.
 
 ## 🎛️ 4. Configuration
@@ -116,7 +118,7 @@ python ollama_voice_chat.py
 ```
 Example: Run with different models and settings:
 ```Bash
-python ollama_voice_chat.py --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 3 
+python ollama_voice_chat.py --wakeword-model "hey_glados" --wakeword "hey glados" --vad-aggressiveness 1
 ```
 
 All Arguments:
@@ -143,20 +145,24 @@ Default: ``0.5``
 
 ``--vad-aggressiveness``: Voice Activity Detection aggressiveness (0=least aggressive, 3=most aggressive). Higher values detect silence more readily.
 
-Default: ``3``
+Default: ``2``
 
 ``--silence-seconds``: Seconds of silence to wait before stopping recording after speech is detected.
 
-Default: ``0.5``
+Default: ``0.7``
 
 ``--listen-timeout``: Seconds to wait for speech to start after the wakeword before timing out.
 
-Default: ``5.0``
+Default: ``6.0``
 
 ``--pre-buffer-ms``: Milliseconds of audio to capture before speech is detected, helps prevent cutting off the start of words.
 
-Default: ``500``
-    
+Default: ``400``
+
+``--system-prompt``: The system prompt for the Ollama model.
+
+Default: ``You are a helpful, concise voice assistant.``
+
 CConfiguration File (`config.ini`)
 
 You can also set default values by editing the `config.ini` file in the same directory as the script. This file allows you to configure most of the same options as the command-line arguments, plus the system prompt.
