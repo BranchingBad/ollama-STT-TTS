@@ -36,7 +36,8 @@ Improvements (Implemented in this version):
 - STRUCTURAL (v12): Simplified main run loop by removing redundant in-loop stream restart logic, relying on post-command restart.
 - ENHANCEMENT (v13): Added error threshold to _tts_worker for robust TTS failure handling.
 - QOL (v13): Enhanced startup logging to consistently report the actual audio device index used.
-- **QOL (v14): Redacted 'ollama_host' from startup summary logging when using default localhost address.**
+- QOL (v14): Redacted 'ollama_host' from startup summary logging when using default localhost address.
+- **ENHANCEMENT (v15): Implemented check for permanent TTS failure in main loop to force clean shutdown.**
 """
 
 import ollama
@@ -191,6 +192,7 @@ class VoiceAssistant:
         self.tts_stop_event = threading.Event()
         self.is_speaking_event = threading.Event()
         self.interrupt_event = threading.Event()
+        self.tts_has_failed = threading.Event() # NEW: Flag for permanent TTS failure
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
         self.tts_thread.start()
 
@@ -280,6 +282,8 @@ class VoiceAssistant:
                 consecutive_errors += 1
                 if consecutive_errors >= MAX_TTS_ERRORS:
                     logging.critical(f"TTS worker failed {MAX_TTS_ERRORS} consecutive times. Stopping TTS thread.")
+                    # Set the permanent failure flag
+                    self.tts_has_failed.set()
                     # Clear the queue to prevent reprocessing the failing item
                     with self.tts_queue.mutex:
                         self.tts_queue.queue.clear()
@@ -298,8 +302,8 @@ class VoiceAssistant:
     def speak(self, text: str) -> None:
         """Adds text to the TTS queue to be spoken by the worker thread."""
         # Check if the TTS worker is still alive before queuing text
-        if not self.tts_thread.is_alive():
-            logging.error(f"Cannot speak: TTS engine has failed or stopped. Text: '{text[:20]}...'")
+        if not self.tts_thread.is_alive() and self.tts_has_failed.is_set():
+            logging.error(f"Cannot speak: TTS engine has failed permanently. Text: '{text[:20]}...'")
             return
 
         # Use debug for the text being spoken, info for the action
@@ -313,6 +317,9 @@ class VoiceAssistant:
 
     def wait_for_speech(self) -> None:
         """Blocks until the TTS queue is empty and all speech is finished."""
+        if self.tts_has_failed.is_set():
+             return # Skip waiting if TTS is permanently broken
+
         logging.debug("Waiting for speech to finish...")
         self.tts_queue.join()
         # The tts_worker manages clearing is_speaking_event after queue is empty
@@ -599,6 +606,11 @@ class VoiceAssistant:
         # --- Main Loop ---
         try:
             while True:
+                # Check for permanent TTS failure
+                if self.tts_has_failed.is_set():
+                     logging.critical("TTS engine failed permanently. Shutting down gracefully.")
+                     break
+
                 if not self.stream:
                     logging.error("Audio stream was unexpectedly closed.")
                     break
