@@ -1,7 +1,7 @@
 numpy
-ollama>=0.6.0
+ollama
 openai-whisper
-openwakeword>=0.5.0
+openwakeword
 pyttsx3
-PyAudio>=0.2.13
-webrtcvad>=2.0.10
+PyAudio
+webrtcvad
