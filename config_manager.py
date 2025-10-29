@@ -1,203 +1,167 @@
-import argparse
+#!/usr/bin/env python3
+
+"""
+config_manager.py
+
+Handles loading configuration from config.ini and command-line arguments.
+"""
+
 import configparser
+import argparse
 import logging
 import sys
 import os
 import ollama
-from typing import Any
-import pyaudio
+# import pyaudio # No longer needed
+from typing import Any, Tuple
 
-# Import constants and helpers from audio_utils (Single Source of Truth)
-from audio_utils import (
-    DEFAULT_SETTINGS, DEFAULT_OLLAMA_HOST, list_audio_devices, list_tts_voices
-)
+# Import defaults and helpers from audio_utils
+try:
+    from audio_utils import (
+        DEFAULT_SETTINGS, 
+        list_audio_devices, # Updated import
+        list_tts_voices
+    )
+except ImportError:
+    print("FATAL ERROR: Could not import from audio_utils.py. Ensure the file is present.")
+    sys.exit(1)
 
+CONFIG_FILE_NAME = 'config.ini'
 
-# --- External Dependency Checks ---
+def setup_logging() -> None:
+    """Configures the root logger for the application."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    # Quieten noisy libraries
+    logging.getLogger("pyttsx3").setLevel(logging.WARNING)
+    logging.getLogger("openwakeword").setLevel(logging.WARNING)
+    logging.getLogger("webrtcvad").setLevel(logging.WARNING)
+    # logging.getLogger("pyaudio").setLevel(logging.WARNING) # No longer needed
 
-def check_ollama_connectivity(host: str) -> bool:
-    """Checks if the Ollama server is running and reachable."""
+def check_ollama_connectivity(ollama_host: str) -> bool:
+    """Checks if the Ollama server is reachable."""
+    logging.info(f"Checking Ollama connection at {ollama_host}...")
+    if ollama_host == DEFAULT_SETTINGS['ollama_host'] and DEFAULT_SETTINGS['ollama_host'] not in ollama_host:
+         logging.info(f"Using default Ollama host: {DEFAULT_SETTINGS['ollama_host']}")
+         ollama_host = DEFAULT_SETTINGS['ollama_host']
+
     try:
-        ollama.Client(host=host).list()
-        logging.info(f"Ollama server is reachable at {host}.")
+        client = ollama.Client(host=ollama_host)
+        client.list() 
+        logging.info("Ollama server is reachable.")
         return True
     except Exception as e:
-        logging.error(f"Ollama server is not reachable at {host}. Error: {e}")
+        logging.error(f"Failed to connect to Ollama at {ollama_host}: {e}")
+        logging.error("Please ensure Ollama is running and the 'ollama_host' in config.ini is correct.")
         return False
 
-def check_local_files_exist(args: argparse.Namespace) -> bool:
-    """Checks if the local model files (Whisper and Wakeword) exist."""
-    success = True
-
-    # 1. Check Wakeword model file
-    wakeword_path = args.wakeword_model_path
-    if not os.path.exists(wakeword_path):
-        logging.error(f"Wakeword model file not found: '{wakeword_path}'")
-        logging.error("Please ensure the file path is correct or download the necessary .onnx model.")
-        success = False
-    else:
-        logging.debug(f"Wakeword model file found: '{wakeword_path}'")
-
-    # 2. Check Whisper model
-    whisper_model = args.whisper_model
-    if os.path.sep in whisper_model or '/' in whisper_model or '\\' in whisper_model:
-        if not os.path.exists(whisper_model):
-            logging.error(f"Whisper model file not found: '{whisper_model}'")
-            success = False
-        else:
-            logging.debug(f"Whisper model file found: '{whisper_model}'")
-    else:
-        logging.debug(f"Whisper model is a standard name ('{whisper_model}'), relying on whisper package download/cache.")
-
-    return success
-
-# --- Argument/Config Loader ---
-
-def load_config_and_args() -> tuple[argparse.Namespace, argparse.Namespace]:
+def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser]:
     """
-    Loads configuration from config.ini, defines command-line arguments,
-    and returns parsed arguments along with the list-command arguments.
+    Loads settings from config.ini, parses command-line arguments,
+    and sets up logging.
     """
+    
     config = configparser.ConfigParser()
-    argparse_defaults: dict[str, Any] = DEFAULT_SETTINGS.copy()
+    if os.path.exists(CONFIG_FILE_NAME):
+        config.read(CONFIG_FILE_NAME)
+        logging.info(f"Loaded configuration from {CONFIG_FILE_NAME}")
+    else:
+        logging.warning(f"{CONFIG_FILE_NAME} not found. Using default settings and CLI args.")
     
-    # Ensure device_index default is explicitly typed for argparse
-    argparse_defaults['device_index']: int | None = argparse_defaults['device_index']
+    config_models = config['Models'] if 'Models' in config else {}
+    config_func = config['Functionality'] if 'Functionality' in config else {}
 
-
-    # 1. Initial Parsing for Verbose and List flags
-    temp_parser = argparse.ArgumentParser(add_help=False)
-    temp_parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose DEBUG logging')
+    def get_config_val(section, key, default, type_converter):
+        val = section.get(key)
+        if val is None:
+            return default
+        try:
+            if type_converter == bool:
+                return section.getboolean(key)
+            if val.lower() == 'none':
+                return None
+            return type_converter(val)
+        except (ValueError, configparser.NoOptionError):
+            logging.warning(f"Invalid value '{val}' for '{key}' in config.ini. Using default: {default}")
+            return default
     
-    # We must use try-except or check for remaining args if we want to ensure
-    # a tuple is always returned from a parsing attempt that might fail internally.
-    # The common fix for TypeErrors here is ensuring load_config_and_args doesn't implicitly return None.
-    try:
-        temp_args, remaining_args = temp_parser.parse_known_args()
-    except Exception as e:
-        # If parsing fails at the known_args step, this is a fatal error
-        logging.critical(f"FATAL: Initial argument parsing failed: {e}")
-        # In this rare case, the process must exit or return a structure the caller can handle.
-        # Since the caller expects a tuple, we re-raise or let the system exit.
-        raise
+    parser = argparse.ArgumentParser(description="A hands-free voice assistant for Ollama.")
+    
+    parser.add_argument('--list-devices', action='store_true', help="List available audio input devices and exit.")
+    parser.add_argument('--list-voices', action='store_true', help="List available TTS voices and exit.")
+    parser.add_argument('--debug', action='store_true', help="Enable debug logging.")
 
+    model_group = parser.add_argument_group('Models')
+    model_group.add_argument('--ollama-model', type=str, default=DEFAULT_SETTINGS['ollama_model'], help="Name of the Ollama model to use.")
+    model_group.add_argument('--whisper-model', type=str, default=DEFAULT_SETTINGS['whisper_model'], help="Name of the faster-whisper model to use (e.g., tiny.en, base.en).")
+    model_group.add_argument('--wakeword-model-path', type=str, default=DEFAULT_SETTINGS['wakeword_model_path'], help="Path to the .onnx wakeword model file.")
+    model_group.add_argument('--ollama-host', type=str, default=DEFAULT_SETTINGS['ollama_host'], help="URL of the Ollama server.")
 
-    log_level = logging.DEBUG if temp_args.verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - %(message)s'
+    func_group = parser.add_argument_group('Functionality')
+    func_group.add_argument('--wakeword', type=str, default=DEFAULT_SETTINGS['wakeword'], help="The wakeword phrase.")
+    func_group.add_argument('--wakeword-threshold', type=float, default=DEFAULT_SETTINGS['wakeword_threshold'], help="Wakeword detection threshold (0.0 to 1.0).")
+    func_group.add_argument('--vad-aggressiveness', type=int, default=DEFAULT_SETTINGS['vad_aggressiveness'], help="VAD aggressiveness (0=least aggressive, 3=most aggressive).")
+    func_group.add_argument('--silence-seconds', type=float, default=DEFAULT_SETTINGS['silence_seconds'], help="Seconds of silence to detect end of speech.")
+    func_group.add_argument('--listen-timeout', type=float, default=DEFAULT_SETTINGS['listen_timeout'], help="Seconds to wait for speech before timing out.")
+    func_group.add_argument('--pre-buffer-ms', type=int, default=DEFAULT_SETTINGS['pre_buffer_ms'], help="Milliseconds of audio to keep before speech starts.")
+    func_group.add_argument('--system-prompt', type=str, default=DEFAULT_SETTINGS['system_prompt'], help="The system prompt for the assistant.")
+    func_group.add_argument('--device-index', type=lambda x: int(x) if x.lower() != 'none' else None, default=DEFAULT_SETTINGS['device_index'], help="Index of the audio input device (use --list-devices).")
+    func_group.add_argument('--tts-voice-id', type=str, default=DEFAULT_SETTINGS['tts_voice_id'], help="ID or name of the pyttsx3 voice (use --list-voices).")
+    func_group.add_argument('--tts-volume', type=float, default=DEFAULT_SETTINGS['tts_volume'], help="TTS volume (0.0 to 1.0).")
+    func_group.add_argument('--max-words-per-command', type=int, default=DEFAULT_SETTINGS['max_words_per_command'], help="Maximum words allowed in a single transcribed command.")
+    func_group.add_argument('--whisper-device', type=str, default=DEFAULT_SETTINGS['whisper_device'], help="Device for Whisper (e.g., 'cpu', 'cuda').")
+    func_group.add_argument('--whisper-compute-type', type=str, default=DEFAULT_SETTINGS['whisper_compute_type'], help="Compute type for Whisper (e.g., 'int8', 'float16').")
+    func_group.add_argument('--max-history-tokens', type=int, default=DEFAULT_SETTINGS['max_history_tokens'], help="Maximum token context for chat history.")
+
+    parser.set_defaults(
+        ollama_model=config_models.get('ollama_model', DEFAULT_SETTINGS['ollama_model']),
+        whisper_model=config_models.get('whisper_model', DEFAULT_SETTINGS['whisper_model']),
+        wakeword_model_path=config_models.get('wakeword_model_path', DEFAULT_SETTINGS['wakeword_model_path']),
+        ollama_host=config_models.get('ollama_host', DEFAULT_SETTINGS['ollama_host']),
+        
+        wakeword=config_func.get('wakeword', DEFAULT_SETTINGS['wakeword']),
+        wakeword_threshold=get_config_val(config_func, 'wakeword_threshold', DEFAULT_SETTINGS['wakeword_threshold'], float),
+        vad_aggressiveness=get_config_val(config_func, 'vad_aggressiveness', DEFAULT_SETTINGS['vad_aggressiveness'], int),
+        silence_seconds=get_config_val(config_func, 'silence_seconds', DEFAULT_SETTINGS['silence_seconds'], float),
+        listen_timeout=get_config_val(config_func, 'listen_timeout', DEFAULT_SETTINGS['listen_timeout'], float),
+        pre_buffer_ms=get_config_val(config_func, 'pre_buffer_ms', DEFAULT_SETTINGS['pre_buffer_ms'], int),
+        system_prompt=config_func.get('system_prompt', DEFAULT_SETTINGS['system_prompt']),
+        
+        device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], lambda x: int(x) if x.lower() != 'none' else None),
+        tts_voice_id=get_config_val(config_func, 'tts_voice_id', DEFAULT_SETTINGS['tts_voice_id'], str),
+        tts_volume=get_config_val(config_func, 'tts_volume', DEFAULT_SETTINGS['tts_volume'], float),
+        
+        max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
+        whisper_device=config_func.get('whisper_device', DEFAULT_SETTINGS['whisper_device']),
+        whisper_compute_type=config_func.get('whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type']),
+        max_history_tokens=get_config_val(config_func, 'max_history_tokens', DEFAULT_SETTINGS['max_history_tokens'], int)
     )
 
-    list_parser = argparse.ArgumentParser(add_help=False)
-    list_parser.add_argument('--list-devices', action='store_true', help='List available audio input devices and exit.')
-    list_parser.add_argument('--list-voices', action='store_true', help='List available TTS voices and exit.')
-    list_args, remaining_args = list_parser.parse_known_args(remaining_args)
+    args = parser.parse_args()
 
-    # If listing is requested, we stop here after listing
-    if list_args.list_devices or list_args.list_voices:
-        if list_args.list_devices:
-            p_audio = pyaudio.PyAudio()
-            list_audio_devices(p_audio)
-            p_audio.terminate()
-        if list_args.list_voices:
-            list_tts_voices()
-        sys.exit(0) # Exits cleanly, so assistant.py's main loop isn't hit
+    setup_logging()
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.debug("DEBUG logging enabled.")
 
-
-    # 2. Configuration File Reading
-    try:
-        if config.read('config.ini'):
-             logging.info("Loaded configuration from config.ini")
-             
-             # Configuration reading logic
-             if 'Models' in config:
-                 argparse_defaults['ollama_model'] = config.get('Models', 'ollama_model', fallback=argparse_defaults['ollama_model'])
-                 argparse_defaults['whisper_model'] = config.get('Models', 'whisper_model', fallback=argparse_defaults['whisper_model'])
-                 argparse_defaults['wakeword_model_path'] = config.get('Models', 'wakeword_model_path', fallback=argparse_defaults['wakeword_model_path'])
-                 argparse_defaults['ollama_host'] = config.get('Models', 'ollama_host', fallback=argparse_defaults['ollama_host'])
-             
-             if 'Functionality' in config:
-                 argparse_defaults['wakeword'] = config.get('Functionality', 'wakeword', fallback=argparse_defaults['wakeword'])
-                 argparse_defaults['wakeword_threshold'] = config.getfloat('Functionality', 'wakeword_threshold', fallback=argparse_defaults['wakeword_threshold'])
-                 argparse_defaults['vad_aggressiveness'] = config.getint('Functionality', 'vad_aggressiveness', fallback=argparse_defaults['vad_aggressiveness'])
-                 argparse_defaults['silence_seconds'] = config.getfloat('Functionality', 'silence_seconds', fallback=argparse_defaults['silence_seconds'])
-                 argparse_defaults['listen_timeout'] = config.getfloat('Functionality', 'listen_timeout', fallback=argparse_defaults['listen_timeout'])
-                 argparse_defaults['pre_buffer_ms'] = config.getint('Functionality', 'pre_buffer_ms', fallback=argparse_defaults['pre_buffer_ms'])
-                 argparse_defaults['system_prompt'] = config.get('Functionality', 'system_prompt', fallback=argparse_defaults['system_prompt'])
-                 
-                 argparse_defaults['tts_voice_id'] = config.get('Functionality', 'tts_voice_id', fallback=argparse_defaults['tts_voice_id'])
-                 argparse_defaults['tts_volume'] = config.getfloat('Functionality', 'tts_volume', fallback=argparse_defaults['tts_volume'])
-                 argparse_defaults['max_words_per_command'] = config.getint('Functionality', 'max_words_per_command', fallback=argparse_defaults['max_words_per_command']) 
-                 argparse_defaults['whisper_device'] = config.get('Functionality', 'whisper_device', fallback=argparse_defaults['whisper_device'])
-                 argparse_defaults['max_history_tokens'] = config.getint('Functionality', 'max_history_tokens', fallback=argparse_defaults['max_history_tokens'])
-                 
-                 device_index_val = config.get('Functionality', 'device_index', fallback=None)
-                 if device_index_val is not None and device_index_val.strip() != '' and device_index_val.strip().lower() != 'none':
-                     try:
-                         argparse_defaults['device_index'] = int(device_index_val)
-                     except ValueError:
-                         logging.error(f"Invalid integer value for device_index in config.ini: '{device_index_val}'. Using auto-select (None).")
-                         argparse_defaults['device_index'] = None
-                 else:
-                    argparse_defaults['device_index'] = None
-
-
-        else:
-             logging.info("config.ini not found, using default settings.")
-    except configparser.Error as e:
-        logging.error(f"Error reading config.ini: {e}. Using default settings.")
-
-    # 3. Main Argument Parsing
-    parser = argparse.ArgumentParser(
-        description="Ollama STT-TTS Voice Assistant",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        parents=[temp_parser, list_parser]
-    )
-
-    # Argument definitions (using argparse_defaults as defaults)
-    parser.add_argument('--ollama-model', type=str, default=argparse_defaults['ollama_model'], help='Ollama model (e.g., "llama3")')
-    parser.add_argument('--ollama-host', type=str, default=argparse_defaults['ollama_host'], help='The URL for the Ollama server (e.g., "http://192.168.1.10:11434").')
-    parser.add_argument('--whisper-model', type=str, default=argparse_defaults['whisper_model'], help='Whisper model (e.g., "tiny.en", "base.en").')
-    parser.add_argument('--wakeword-model-path', type=str, default=argparse_defaults['wakeword_model_path'], help='Full path to the .onnx wakeword model.')
-    parser.add_argument('--wakeword', type=str, default=argparse_defaults['wakeword'], help='Wakeword phrase.')
-    parser.add_argument('--wakeword-threshold', type=float, default=argparse_defaults['wakeword_threshold'], help='Wakeword sensitivity (0.0-1.0).')
-    parser.add_argument('--vad-aggressiveness', type=int, default=argparse_defaults['vad_aggressiveness'], choices=[0, 1, 2, 3], help='VAD aggressiveness (0=least, 3=most).')
-    parser.add_argument('--silence-seconds', type=float, default=argparse_defaults['silence_seconds'], help='Seconds of silence before stopping recording.')
-    parser.add_argument('--listen-timeout', type=float, default=argparse_defaults['listen_timeout'], help='Seconds to wait for speech after wakeword before timeout.')
-    parser.add_argument('--pre-buffer-ms', type=int, default=argparse_defaults['pre_buffer_ms'], help='Milliseconds of audio to pre-buffer.')
-    parser.add_argument('--system-prompt', type=str, default=argparse_defaults['system_prompt'], help='The system prompt for the Ollama model.')
-    # The default for device-index is set to None, but argparse needs a type that accepts None or int
-    parser.add_argument('--device-index', type=int, default=argparse_defaults['device_index'], help='Index of the audio input device to use. (Use --list-devices to see options)')
-    parser.add_argument('--tts-voice-id', type=str, default=argparse_defaults['tts_voice_id'], help='ID of the pyttsx3 voice to use. (Use --list-voices to see options)')
-    parser.add_argument('--tts-volume', type=float, default=argparse_defaults['tts_volume'], help='TTS speaking volume (0.0 to 1.0).')
-    parser.add_argument('--max-words-per-command', type=int, default=argparse_defaults['max_words_per_command'], help='Maximum number of words allowed in a command transcription.')
-    parser.add_argument('--whisper-device', type=str, default=argparse_defaults['whisper_device'], choices=['cpu', 'cuda'], help="Device to use for Whisper transcription ('cpu' or 'cuda').")
-    parser.add_argument('--max-history-tokens', type=int, default=argparse_defaults['max_history_tokens'], help='Maximum token count for conversation history (system message + all turns).')
-
-
-    args = parser.parse_args(remaining_args) # Use the remaining args here
-
-    # 4. Check Local Files
-    if not check_local_files_exist(args):
-        logging.critical("FATAL: One or more local model files are missing. Cannot start assistant.")
-        sys.exit(1)
-
-
-    # Logging final effective settings
-    logging.info("Starting assistant with the following effective settings:")
-    for arg, value in vars(args).items():
-        if arg in ['list_devices', 'list_voices', 'verbose']: continue
+    # --- UPDATED SECTION ---
+    if args.list_devices or args.list_voices:
+        if args.list_devices:
+            try:
+                # No p_audio object needed, sounddevice is module-level
+                list_audio_devices() 
+            except Exception as e:
+                logging.error(f"Could not list audio devices: {e}")
         
-        # Explicitly log default host
-        is_default_host = arg == 'ollama_host' and value == DEFAULT_OLLAMA_HOST
+        if args.list_voices:
+            try:
+                list_tts_voices()
+            except Exception as e:
+                logging.error(f"Could not list TTS voices: {e}")
         
-        if arg == 'system_prompt' and len(str(value)) > 100:
-             logging.info(f"  --{arg}: '{str(value)[:100]}...'")
-        elif is_default_host:
-             logging.info(f"  --{arg}: {value} (Default)")
-        else:
-             logging.info(f"  --{arg}: {value}")
-    logging.info("-" * 20)
+        sys.exit(0) # Exit after listing
 
-    # list_args are not needed after this point but returned for completeness if necessary
-    return args, list_args # This ensures a tuple is returned
+    return args, config

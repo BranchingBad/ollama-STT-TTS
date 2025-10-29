@@ -1,7 +1,7 @@
 numpy
 ollama
-openai-whisper
 openwakeword
 pyttsx3
-PyAudio
 webrtcvad
+faster-whisper
+sounddevice

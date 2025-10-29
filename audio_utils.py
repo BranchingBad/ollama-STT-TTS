@@ -1,21 +1,21 @@
-import pyaudio
+import sounddevice as sd
 import pyttsx3
 from typing import Any
 
 # --- 1. Audio Settings (Constants) ---
-FORMAT: int = pyaudio.paInt16       # 16-bit audio
+FORMAT_NP: str = 'int16'          # Data type for sounddevice
 CHANNELS: int = 1                 # Mono
 RATE: int = 16000                 # 16kHz sample rate
-CHUNK_DURATION_MS: int = 30       # 30ms chunks for VAD (Must be 10, 20, or 30 for webrtcvad)
-CHUNK_SIZE: int = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames per chunk (16000 * 0.03 = 480)
+CHUNK_DURATION_MS: int = 30       # 30ms chunks for VAD
+CHUNK_SIZE: int = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames
 INT16_NORMALIZATION: float = 32768.0 # Normalization factor for int16
 SENTENCE_END_PUNCTUATION: list[str] = ['.', '?', '!', '\n']
-MAX_TTS_ERRORS: int = 5           # Max consecutive errors before stopping TTS worker
-DEFAULT_OLLAMA_HOST: str = 'http://localhost:11434' # Define default for logging check
-MAX_HISTORY_MESSAGES: int = 20    # Max *turns* (user/assistant pairs) to keep (Fallback)
-STREAM_READ_TIMEOUT: float = 0.05 # Timeout for non-blocking read in the main loop (seconds)
+MAX_TTS_ERRORS: int = 5
+DEFAULT_OLLAMA_HOST: str = 'http://localhost:11434'
+MAX_HISTORY_MESSAGES: int = 20
+STREAM_READ_TIMEOUT: float = 0.05 
 
-# --- 2. Centralized Configuration Defaults (Matching config.ini) ---
+# --- 2. Centralized Configuration Defaults ---
 DEFAULT_SETTINGS: dict[str, Any] = {
     'ollama_model': 'llama3',
     'whisper_model': 'tiny.en',
@@ -28,45 +28,44 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'listen_timeout': 4.0,     
     'pre_buffer_ms': 400,
     'system_prompt': 'You are a friendly, concise, and intelligent voice assistant named GLaDOS. Keep your responses short and witty.',
-    'device_index': None, # Must be None or int
+    'device_index': None, 
     'tts_voice_id': None,
     'tts_volume': 1.0, 
     'max_words_per_command': 60, 
     'whisper_device': 'cpu',
+    'whisper_compute_type': 'int8',
     'max_history_tokens': 4096,
 }
 
-
-# --- 3. PyAudio and TTS Helpers ---
-def list_audio_devices(p_audio: pyaudio.PyAudio) -> None:
-    """Lists all available audio input devices."""
-    print("\n--- Available Audio Input Devices ---")
+# --- 3. Audio Helpers (Updated for sounddevice) ---
+def list_audio_devices() -> None:
+    """Lists all available audio input devices using sounddevice."""
+    print("\n--- Available Audio Input Devices (sounddevice) ---")
     try:
-        # Assuming index 0 is the default host API
-        info = p_audio.get_host_api_info_by_index(0)
-        numdevices = info.get('deviceCount')
-        for i in range(0, numdevices):
-            dev = p_audio.get_device_info_by_host_api_device_index(0, i)
-            if dev.get('maxInputChannels') > 0:
+        devices = sd.query_devices()
+        input_devices_found = False
+        for i, dev in enumerate(devices):
+            if dev.get('max_input_channels', 0) > 0:
                 print(f"  Index {i}: {dev.get('name')}")
+                input_devices_found = True
+        if not input_devices_found:
+            print("  No input devices found.")
     except Exception as e:
         print(f"Error listing devices: {e}")
-    print("------------------------------------\n")
-    
+    print("-------------------------------------------------\n")
+
 def list_tts_voices() -> None:
-    """Lists all available pyttsx3 voices, prioritizing English ones."""
+    """Lists all available pyttsx3 voices."""
     engine = pyttsx3.init()
     voices = engine.getProperty('voices')
     print("\n--- Available TTS Voices (English/General) ---")
     for voice in voices:
-        # Check for English or general language ID/tag
         is_english_or_general = False
         if voice.id and ('en' in voice.id.lower()):
             is_english_or_general = True
         
         if not is_english_or_general and voice.languages:
              for lang in voice.languages:
-                 # Check for 'en' (English) or 'gmw' (Germanic/general) language codes
                  if 'en' in lang.lower() or 'gmw' in lang.lower(): 
                      is_english_or_general = True
                      break

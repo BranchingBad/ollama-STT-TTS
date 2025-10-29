@@ -61,7 +61,7 @@ On Fedora/RHEL Linux:
 _Note: The portaudio-devel package is in the standard Fedora repositories, but ffmpeg is not. You must first enable the RPM Fusion repository to install ffmpeg._
 
 ```bash
-sudo dnf install portaudio-devel gcc python3-devel ffmpeg
+sudo dnf install portaudio-devel gcc python3-devel ffmpeg pulseaudio-libs-devel
 ```
 
 ## 🔧 2. Installation
