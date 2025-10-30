@@ -6,15 +6,14 @@ WORKDIR /app
 
 # Install system-level dependencies required for
 # sounddevice (portaudio19-dev).
-# 'espeak' is no longer required as we've moved to Piper TTS.
 RUN apt-get update && apt-get install -y \
     build-essential \
     portaudio19-dev \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file first to leverage Docker layer caching
 COPY requirements.txt .
-
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
