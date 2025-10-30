@@ -16,12 +16,12 @@ MAX_HISTORY_MESSAGES: int = 20
 # --- 2. Centralized Configuration Defaults ---
 DEFAULT_SETTINGS: dict[str, Any] = {
     # --- IMPROVEMENT 3: Aligned with config.ini ---
-    'ollama_model': 'phi3:mini',
+    'ollama_model': 'llama3',
     'whisper_model': 'tiny.en',
     'wakeword_model_path': 'hey_glados.onnx',
     'ollama_host': 'http://localhost:11434',
     'wakeword': 'hey glados',
-    'wakeword_threshold': 0.45, 
+    'wakeword_threshold': 0.35, 
     'vad_aggressiveness': 2,   
     'silence_seconds': 0.5,    
     'listen_timeout': 4.0,     
