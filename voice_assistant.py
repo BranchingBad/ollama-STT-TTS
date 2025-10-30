@@ -26,6 +26,8 @@ import os
 import gc
 import json
 from piper import PiperVoice
+# Added for transcription timeout
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 
 # Import external modules
@@ -40,6 +42,9 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
+
+# Define transcription timeout constant
+TRANSCRIPTION_TIMEOUT_SECONDS = 10.0
 
 
 class VoiceAssistant:
@@ -340,14 +345,32 @@ class VoiceAssistant:
                 logging.warning("Audio buffer is full, dropping audio chunks! (Callback is faster than consumer)")
                 self.last_buffer_drop_warning = now
 
+    def _internal_transcribe(self, audio_np: npt.NDArray[np.float32]) -> str:
+        """Internal worker function for transcription."""
+        segments, info = self.whisper_model.transcribe(audio_np, language="en")
+        full_text = "".join(segment.text for segment in segments)
+        return full_text.strip()
+
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
+        """
+        Runs transcription with a timeout to prevent CPU/GPU blocking.
+        """
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self._internal_transcribe, audio_np)
+        full_text = ""
+        
         try:
-            segments, info = self.whisper_model.transcribe(audio_np, language="en")
-            full_text = "".join(segment.text for segment in segments)
-            return full_text.strip()
+            full_text = future.result(timeout=TRANSCRIPTION_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logging.error(f"Transcription timed out after {TRANSCRIPTION_TIMEOUT_SECONDS} seconds.")
+            return ""
         except Exception as e:
             logging.error(f"faster-whisper transcription error: {e}")
             return ""
+        finally:
+            executor.shutdown(wait=False) # Ensure the executor is stopped
+            
+        return full_text
 
     def record_command(self) -> npt.NDArray[np.float32] | None:
         """Records audio from the stream_buffer until silence."""
@@ -578,10 +601,14 @@ class VoiceAssistant:
                 self.stream_buffer.queue.clear()
 
             logging.info("Transcribing audio...")
+            
+            # --- Transcription with Timeout ---
             user_text: str = self.transcribe_audio(audio_data)
+            # --- End Transcription with Timeout ---
+            
             if not user_text:
-                logging.warning("Transcription failed.")
-                self.speak("I'm sorry, I couldn't understand.")
+                logging.warning("Transcription failed or timed out.")
+                self.speak("I'm sorry, I couldn't understand or the system is too slow. Please try again.")
                 self.wait_for_speech()
                 return False
 
