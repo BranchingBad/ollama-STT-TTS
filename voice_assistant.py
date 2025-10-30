@@ -30,7 +30,7 @@ from piper import PiperVoice
 
 # Import external modules
 from audio_utils import (
-    FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX, # UPDATED: Renamed from INT16_NORMALIZATION
+    FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX,
     SENTENCE_END_PUNCTUATION, MAX_TTS_ERRORS, MAX_HISTORY_MESSAGES
 )
 
@@ -730,14 +730,13 @@ class VoiceAssistant:
             except Exception as e:
                 logging.warning(f"Error releasing Whisper model: {e}")
 
-        if hasattr(self, 'tts_stop_event'):
+        # --- IMPROVEMENT: Consolidated TTS thread cleanup ---
+        if hasattr(self, 'tts_thread'):
             self.tts_stop_event.set()
             
             if hasattr(self, 'tts_queue'):
-                self.tts_queue.put(None) # Send shutdown signal
+                self.tts_queue.put(None) # Send shutdown signal to unblock queue.get()
             
-            # Ensuring correct attribute existence check
-            if hasattr(self, 'tts_thread') and self.tts_thread.is_alive():
+            if self.tts_thread.is_alive():
                 self.tts_thread.join(timeout=1.0)
-                if self.tts_thread.is_alive():
-                    logging.warning("TTS thread did not shut down cleanly.")
+                if self.tts_thread.is_
