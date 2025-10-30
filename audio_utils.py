@@ -32,7 +32,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'whisper_device': 'cpu',
     'whisper_compute_type': 'int8',
     'max_history_tokens': 2048,
-}
+}       
 
 # --- 3. Audio Helpers (Updated for sounddevice) ---
 def list_audio_input_devices() -> None:
@@ -42,7 +42,7 @@ def list_audio_input_devices() -> None:
         devices = sd.query_devices()
         input_devices_found = False
         for i, dev in enumerate(devices):
-            if dev.get('max_input_channels', 0) > 0:
+            if dev.get('max_input_channels', 0) > 0 and 'input' in dev.get('name', '').lower():
                 print(f"  Index {i}: {dev.get('name')}")
                 input_devices_found = True
         if not input_devices_found:
@@ -58,7 +58,7 @@ def list_audio_output_devices() -> None:
         devices = sd.query_devices()
         output_devices_found = False
         for i, dev in enumerate(devices):
-            if dev.get('max_output_channels', 0) > 0:
+            if dev.get('max_output_channels', 0) > 0 and 'output' in dev.get('name', '').lower():
                 print(f"  Index {i}: {dev.get('name')}")
                 output_devices_found = True
         if not output_devices_found:

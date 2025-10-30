@@ -154,7 +154,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         except Exception as e:
             logging.error(f"Failed to read system prompt file '{args.system_prompt}': {e}")
             logging.warning("Using the default system prompt instead.")
-            args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+            args.system_prompt = DEFAULT_SETTINGS['system_prompt'] # Fallback to hardcoded default
     elif not args.system_prompt:
          logging.warning("System prompt is empty. Using default.")
          args.system_prompt = DEFAULT_SETTINGS['system_prompt']
@@ -173,6 +173,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
             except Exception as e:
                 logging.error(f"Could not list audio output devices: {e}")
 
-        sys.exit(0)
+        sys.exit(0) # Exit after listing devices
 
     return args, config

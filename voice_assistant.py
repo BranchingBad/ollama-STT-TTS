@@ -232,7 +232,7 @@ class VoiceAssistant:
                         break
                     
                     # --- FINAL-FINAL-FINAL FIX: Cast the AudioChunk object to bytes ---
-                    audio_np = np.frombuffer(bytes(audio_chunk), dtype=np.int16)
+                    audio_np = np.frombuffer(audio_chunk, dtype=np.int16)
                     # --- END FIX ---
                     
                     stream.write(audio_np)
@@ -254,7 +254,7 @@ class VoiceAssistant:
                 if stream:
                     stream.stop()
                     stream.close()
-
+                
                 if text is not None:
                     self.tts_queue.task_done()
                 
@@ -269,11 +269,11 @@ class VoiceAssistant:
         logging.info(f"Assistant: {text}")
         
         if self.interrupt_event.is_set():
-             with self.tts_queue.mutex:
+             with self.tts_queue.mutex: # Clear the queue if an interrupt has been requested
                 self.tts_queue.queue.clear()
 
         self.tts_queue.put(text)
-        self.interrupt_event.clear()
+        # self.interrupt_event.clear() # Removed: This was clearing the interrupt too early
 
     def wait_for_speech(self) -> None:
         if self.tts_has_failed.is_set():
@@ -287,7 +287,7 @@ class VoiceAssistant:
         logging.info(log_message)
         self.interrupt_event.set()
         
-        sd.stop()
+        sd.stop() # Ensure any ongoing sounddevice playback is stopped
 
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
@@ -465,7 +465,7 @@ class VoiceAssistant:
         self.is_processing_command.set()
         full_response = ""
         final_chunk: dict[str, Any] = {}
-        monitor_thread: threading.Thread | None = None
+        monitor_thread: Optional[threading.Thread] = None
 
         try:
             if self.ollama_client is None:
@@ -524,7 +524,7 @@ class VoiceAssistant:
             self._update_history(user_text, full_response)
             if final_chunk:
                 self.last_known_token_count = final_chunk.get('prompt_eval_count', 0)
-                logging.debug(f"Updated history. New prompt token count: {self.last_known_token_count}")
+                logging.debug(f"Updated history. New total token count: {self.last_known_token_count}")
             elif not full_response:
                 self.last_known_token_count = 0
 

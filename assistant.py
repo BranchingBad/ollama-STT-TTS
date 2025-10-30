@@ -23,10 +23,8 @@ def main() -> None:
         # --- IMPROVEMENT ---
         # Get the client *once* and pass it to the assistant.
         # This avoids redundant client creation and allows the assistant
-        # to gracefully handle a None client if connection fails.
-        ollama_client = get_ollama_client(args.ollama_host)
-        
-        if ollama_client is None:
+        ollama_client = get_ollama_client(args.ollama_host) if not (args.list_devices or args.list_output_devices) else None
+        if ollama_client is None and not args.list_devices and not args.list_output_devices:
             logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
             # We still allow it to run, in case the user wants to fix Ollama
             # while the script is live. The class will handle the 'None' client.
