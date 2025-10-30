@@ -341,6 +341,7 @@ class VoiceAssistant:
                             logging.info("Silence detected, processing...")
                             break
                     else:
+                        logging.info("VAD: Still hearing speech...")
                         silent_chunks = 0
                 elif is_speech:
                     logging.info("Speech detected...")
