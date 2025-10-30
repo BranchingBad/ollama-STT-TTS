@@ -93,7 +93,6 @@ class VoiceAssistant:
         self.whisper_device: str = args.whisper_device
         self.whisper_compute_type: str = args.whisper_compute_type
         
-        # --- IMPROVEMENT: Simplified Whisper device logging ---
         if self.whisper_device == 'cuda' and (not TORCH_AVAILABLE or not torch.cuda.is_available()):
             logging.warning("CUDA not available. Falling back to CPU for Whisper.")
             self.whisper_device = 'cpu'
@@ -103,7 +102,6 @@ class VoiceAssistant:
             self.whisper_device = 'cpu'
 
         logging.info(f"Loading faster-whisper model: {args.whisper_model} on device '{self.whisper_device}' (Compute: {self.whisper_compute_type})...")
-        # --- END IMPROVEMENT ---
         
         try:
             self.whisper_model = WhisperModel(
@@ -115,7 +113,7 @@ class VoiceAssistant:
             logging.critical(f"Error loading faster-whisper model '{args.whisper_model}': {e}")
             raise
 
-        # --- NEW: Piper TTS Engine Setup ---
+        # Piper TTS Engine Setup
         logging.info("Initializing TTS engine (Piper)...")
         self.piper_voice: Optional[PiperVoice] = None
         self.piper_sample_rate: int = 16000  # Default, will be overwritten
@@ -153,7 +151,6 @@ class VoiceAssistant:
             logging.critical("Please ensure the Piper model and config files exist and are valid.")
             self.tts_has_failed = threading.Event()
             self.tts_has_failed.set()
-        # --- END: Piper TTS ---
 
         # VAD
         self.vad = webrtcvad.Vad(args.vad_aggressiveness)
@@ -233,11 +230,10 @@ class VoiceAssistant:
                     if self.interrupt_event.is_set():
                         break
                     
-                    # --- CRITICAL BUG FIX (Restored) ---
-                    # audio_chunk is an AudioChunk object. We must call .tobytes()
-                    # to get the raw bytes for numpy.
-                    audio_np = np.frombuffer(audio_chunk.tobytes(), dtype=np.int16)
-                    # --- END FIX ---
+                    # --- FINAL TTS FIX ---
+                    # The debug log confirmed the attribute is 'audio_int16_bytes'.
+                    audio_np = np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16)
+                    # --- END TTS FIX ---
                     
                     stream.write(audio_np)
 
@@ -277,7 +273,6 @@ class VoiceAssistant:
                 self.tts_queue.queue.clear()
 
         self.tts_queue.put(text)
-        # self.interrupt_event.clear() # Removed: This was clearing the interrupt too early
 
     def wait_for_speech(self) -> None:
         if self.tts_has_failed.is_set():
@@ -291,41 +286,49 @@ class VoiceAssistant:
         logging.info(log_message)
         self.interrupt_event.set()
         
-        # --- DEADLOCK BUG FIX ---
-        # sd.stop() # <--- REMOVED: This global stop was causing a deadlock
-        # with the audio callback thread. The TTS worker will stop its
-        # own stream cleanly when it sees the interrupt_event.
-        # --- END FIX ---
-
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
         self.is_speaking_event.clear()
-        self.is_processing_command.clear()
+        
+        # --- DEADLOCK FIX ---
+        # self.is_processing_command.clear() # <--- REMOVED
+        # This flag must *only* be cleared by the finally
+        # block in process_user_command.
+        # --- END FIX ---
 
     def _audio_monitor_worker(self) -> None:
         """Monitors stream_buffer for barge-in during LLM/TTS."""
         logging.debug("Audio monitor started.")
         while self.is_processing_command.is_set():
-            if self.interrupt_event.is_set():
-                 time.sleep(0.01) # Wait for processing to stop
-                 continue
             try:
+                # We must *always* get chunks from the buffer
+                # to prevent it from filling up.
                 chunk: bytes = self.stream_buffer.get(timeout=0.1)
             except queue.Empty:
                 continue
 
             if chunk:
-                # --- BUG FIX: Removed 'if self.is_speaking_event.is_set():' wrapper ---
-                # This now checks for speech ANYTIME processing is active,
-                # not just during TTS playback. This allows interrupting the LLM.
-                is_speech = self.vad.is_speech(chunk, RATE)
-                if is_speech:
-                    self.stop_generation("User interruption (barge-in) detected!")
-                    # stop_generation() clears is_processing_command,
-                    # which will cause this thread's loop to exit.
+                if self.interrupt_event.is_set():
+                    # Interrupt is set, but we must keep clearing the buffer.
+                    # Just don't process the chunk for VAD.
+                    pass
+                else:
+                    # No interrupt, check for barge-in
+                    is_speech = self.vad.is_speech(chunk, RATE)
+                    if is_speech:
+                        # --- DEADLOCK FIX ---
+                        # We MUST NOT call stop_generation() here.
+                        # We just set the flag. The main thread (process_user_command)
+                        # will see this flag and stop itself. This thread
+                        # will keep clearing the buffer until the main thread
+                        # clears 'is_processing_command'.
+                        logging.info("User interruption (barge-in) detected!")
+                        self.interrupt_event.set()
+                        # --- END FIX ---
                 
                 self.stream_buffer.task_done()
         logging.debug("Audio monitor stopped.")
+
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info: Any, status: sd.CallbackFlags) -> None:
         """
@@ -361,10 +364,9 @@ class VoiceAssistant:
         pre_buffer: list[bytes] = []
         timeout_chunks = self.pre_speech_timeout_chunks
 
-        # --- BUG FIX: Removed queue.clear() to allow processing
-        # audio captured between wakeword and this function call.
-        # with self.stream_buffer.mutex:
-        #     self.stream_buffer.queue.clear()
+        # Clear queue of any audio from "Yes?" playback
+        with self.stream_buffer.mutex:
+            self.stream_buffer.queue.clear()
 
         CHUNK_DURATION_MS: float = 30.0
 
@@ -476,12 +478,10 @@ class VoiceAssistant:
             elif self.messages:
                  logging.error(f"Failed to rollback user message.")
 
-    # --- BUG FIX: Barge-In logic moved to process_user_command ---
     def get_ollama_response_stream(self, user_text: str) -> None:
         full_response = ""
         final_chunk: dict[str, Any] = {}
-        # is_processing_command and monitor_thread are now managed by process_user_command
-
+        
         try:
             if self.ollama_client is None:
                 logging.error("Ollama client not available. Cannot get response.")
@@ -507,7 +507,7 @@ class VoiceAssistant:
             with self._ollama_stream_manager(response_stream) as stream:
                 for chunk in stream:
                     if self.interrupt_event.is_set():
-                        logging.info("LLM stream stopped by user.") # Just log and break
+                        logging.info("LLM stream stopped by user.")
                         break
 
                     if chunk.get('done', False):
@@ -530,22 +530,19 @@ class VoiceAssistant:
             self.speak("I'm sorry, I encountered an error.")
             full_response = ""
         finally:
-            # is_processing_command and monitor_thread are now managed by process_user_command
             self._update_history(user_text, full_response)
             if final_chunk:
                 self.last_known_token_count = final_chunk.get('prompt_eval_count', 0)
                 logging.debug(f"Updated history. New total token count: {self.last_known_token_count}")
             elif not full_response:
                 self.last_known_token_count = 0
-    # --- END BUG FIX ---
 
-    # --- BUG FIX: Barge-In logic moved here ---
     def process_user_command(self) -> bool:
         """
         Handles the full command cycle: record, transcribe, get response, speak.
         Returns True if the assistant should exit.
         """
-        self.is_processing_command.set()  # Set flag for the entire duration
+        self.is_processing_command.set()
         monitor_thread: Optional[threading.Thread] = None
 
         try:
@@ -559,7 +556,9 @@ class VoiceAssistant:
                 if not self.interrupt_event.is_set():
                     self.speak("I didn't hear anything.")
                     self.wait_for_speech()
-                return False # finally block will clear the flag
+                return False
+            
+            if self.interrupt_event.is_set(): return False # Interrupted during recording
 
             logging.info("Transcribing audio...")
             user_text: str = self.transcribe_audio(audio_data)
@@ -584,21 +583,26 @@ class VoiceAssistant:
                 self.wait_for_speech()
                 return True
             if "new chat" in user_prompt or "reset chat" in user_prompt:
-                self.reset_.history()
+                self.reset_history()
                 self.speak("Starting a new conversation.")
                 self.wait_for_speech()
                 return False
 
             # Start the barge-in monitor
-            # It will run for the *entire* duration of LLM + TTS
             monitor_thread = threading.Thread(target=self._audio_monitor_worker, daemon=True)
             monitor_thread.start()
 
             logging.info(f"Sending to {self.args.ollama_model}...")
             self.get_ollama_response_stream(user_text)
             
-            if not self.interrupt_event.is_set():
+            # --- DEADLOCK FIX ---
+            # Check for interrupt *after* LLM stream and
+            # call stop_generation to clear the TTS queue.
+            if self.interrupt_event.is_set():
+                self.stop_generation("Clearing TTS queue after interruption.")
+            else:
                 self.wait_for_speech()
+            # --- END FIX ---
 
             self.interrupt_event.clear()
             return False
@@ -606,8 +610,9 @@ class VoiceAssistant:
         finally:
             self.is_processing_command.clear() # Clear flag at the very end
             if monitor_thread and monitor_thread.is_alive():
+                logging.debug("Joining audio monitor thread...")
                 monitor_thread.join(timeout=0.2)
-    # --- END BUG FIX ---
+                logging.debug("Audio monitor thread joined.")
 
     def run(self) -> None:
         """The main loop of the assistant."""
@@ -643,10 +648,6 @@ class VoiceAssistant:
                      logging.critical("TTS engine failed. Shutting down.")
                      break
 
-                # --- IMPROVEMENT: Removed unreachable is_processing_command check ---
-                # This thread blocks on process_user_command(), so this
-                # check was never actually hit while processing.
-
                 audio_chunk: bytes | None = None
                 try:
                     audio_chunk = self.stream_buffer.get(timeout=0.01)
@@ -659,6 +660,10 @@ class VoiceAssistant:
                     continue
 
                 if audio_chunk:
+                    # Don't process for wakeword if we are already processing
+                    if self.is_processing_command.is_set():
+                        continue
+                        
                     audio_np_int16: npt.NDArray[np.int16] = np.frombuffer(audio_chunk, dtype=np.int16)
                     prediction: dict[str, float] = self.oww_model.predict(audio_np_int16)
                     score = prediction.get(self.wakeword_model_key, 0)
@@ -714,9 +719,6 @@ class VoiceAssistant:
         if hasattr(self, 'tts_stop_event'):
             self.tts_stop_event.set()
             
-            # We no longer call the global sd.stop() here
-            # to prevent deadlocks.
-
             if hasattr(self, 'tts_queue'):
                 self.tts_queue.put(None) # Send shutdown signal
 
