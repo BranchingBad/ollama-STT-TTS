@@ -308,12 +308,8 @@ class VoiceAssistant:
                 continue
 
             if chunk:
-                if self.interrupt_event.is_set():
-                    # Interrupt is set, but we must keep clearing the buffer.
-                    # Just don't process the chunk for VAD.
-                    pass
-                else:
-                    # No interrupt, check for barge-in
+                # Only check for barge-in if the interrupt *isn't already set*
+                if not self.interrupt_event.is_set():
                     is_speech = self.vad.is_speech(chunk, RATE)
                     if is_speech:
                         # --- DEADLOCK FIX ---
@@ -546,6 +542,7 @@ class VoiceAssistant:
         monitor_thread: Optional[threading.Thread] = None
 
         try:
+            # This is GOOD. It cleans up the flag from the *previous* run.
             if self.interrupt_event.is_set():
                  logging.info("Resetting interrupt event.")
                  self.interrupt_event.clear()
@@ -559,6 +556,13 @@ class VoiceAssistant:
                 return False
             
             if self.interrupt_event.is_set(): return False # Interrupted during recording
+            
+            # --- RACE CONDITION FIX 1 ---
+            # Clear the buffer *after* recording and *before* starting
+            # the monitor to prevent an instant barge-in.
+            with self.stream_buffer.mutex:
+                self.stream_buffer.queue.clear()
+            # --- END FIX ---
 
             logging.info("Transcribing audio...")
             user_text: str = self.transcribe_audio(audio_data)
@@ -595,16 +599,18 @@ class VoiceAssistant:
             logging.info(f"Sending to {self.args.ollama_model}...")
             self.get_ollama_response_stream(user_text)
             
-            # --- DEADLOCK FIX ---
-            # Check for interrupt *after* LLM stream and
-            # call stop_generation to clear the TTS queue.
             if self.interrupt_event.is_set():
                 self.stop_generation("Clearing TTS queue after interruption.")
             else:
                 self.wait_for_speech()
+            
+            # --- RACE CONDITION FIX 2 ---
+            # self.interrupt_event.clear() # <--- REMOVED
+            # We MUST NOT clear the interrupt here. It creates a race
+            # condition with the monitor thread. We now clear it at the
+            # *start* of the next process_user_command call.
             # --- END FIX ---
 
-            self.interrupt_event.clear()
             return False
         
         finally:
@@ -721,8 +727,10 @@ class VoiceAssistant:
             
             if hasattr(self, 'tts_queue'):
                 self.tts_queue.put(None) # Send shutdown signal
-
+            
+            # --- TYPO FIX ---
             if hasattr(self, 'tts_thread') and self.tts_thread.is_alive():
+            # --- END TYPO FIX ---
                 self.tts_thread.join(timeout=1.0)
                 if self.tts_thread.is_alive():
                     logging.warning("TTS thread did not shut down cleanly.")
