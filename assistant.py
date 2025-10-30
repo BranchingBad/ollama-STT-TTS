@@ -11,11 +11,33 @@ import logging
 import sys
 
 # Import components from other files
+# Note: Removed 'setup_logging' from imports, as it is now defined locally.
 from config_manager import load_config_and_args, get_ollama_client
 from voice_assistant import VoiceAssistant
 
+def setup_logging():
+    """Configures the logging format and level."""
+    log_format = '%(levelname)s %(asctime)s - %(message)s'
+    logging.basicConfig(
+        level=logging.INFO,
+        format=log_format,
+        handlers=[
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
 def main() -> None:
     """The entry point for the assistant application."""
+    
+    # --- FIX 1: Initialize logging first to catch all subsequent errors ---
+    try:
+        setup_logging()
+    except Exception as e:
+        # A simple print if setup_logging fails entirely
+        print(f"FATAL: Could not set up logging: {e}", file=sys.stderr)
+        sys.exit(1)
+    # --- END FIX 1 ---
+
     assistant: VoiceAssistant | None = None
     try:
         # load_config_and_args now returns an additional flag
@@ -29,11 +51,9 @@ def main() -> None:
         # --- END NEW LOGIC ---
 
         # Get the Ollama client *once* and pass it to the assistant.
-        # This function returns None if connection fails.
         ollama_client = get_ollama_client(args.ollama_host)
         
         # --- IMPROVEMENT: Simplify the warning check ---
-        # The ollama_client is only None here if the connection was attempted and failed.
         if ollama_client is None:
             logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
         # --- END IMPROVEMENT ---

@@ -61,7 +61,7 @@ class VoiceAssistant:
         # Calculate derived audio settings
         CHUNK_DURATION_MS: int = 30
         self.silence_chunks: int = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
-        self.pre_speech_timeout_chunks: int = int(args.listen_timeout * 1000 / CHUNK_DURATION_MS)
+        self.pre_speech_timeout_seconds: float = args.listen_timeout # Used for time-based check
         self.pre_buffer_size_chunks: int = int(args.pre_buffer_ms / CHUNK_DURATION_MS)
 
         logging.info("Loading models...")
@@ -260,6 +260,7 @@ class VoiceAssistant:
                 if text is not None:
                     self.tts_queue.task_done()
                 
+                # If the queue is empty and no interrupt is set, the speech has finished naturally.
                 if self.tts_queue.empty() and not self.interrupt_event.is_set():
                     self.is_speaking_event.clear()
 
@@ -280,8 +281,16 @@ class VoiceAssistant:
         if self.tts_has_failed.is_set():
              return
         logging.debug("Waiting for speech...")
+        
+        while self.is_speaking_event.is_set() and not self.interrupt_event.is_set():
+            time.sleep(0.1)
+
+        if self.interrupt_event.is_set():
+            logging.debug("Wait for speech interrupted.")
+            return
+
         self.tts_queue.join()
-        self.is_speaking_event.clear()
+        # is_speaking_event is cleared by _tts_worker or stop_generation()
         logging.debug("Speech finished.")
 
     def stop_generation(self, log_message: str) -> None:
@@ -290,6 +299,8 @@ class VoiceAssistant:
         
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
+        
+        # Explicitly clear the speaking flag on interrupt
         self.is_speaking_event.clear()
 
     def _audio_monitor_worker(self) -> None:
@@ -347,18 +358,25 @@ class VoiceAssistant:
         silent_chunks = 0
         is_speaking = False
         pre_buffer: list[bytes] = []
-        timeout_chunks = self.pre_speech_timeout_chunks
+        
+        # Use time-based timeout
+        start_time = time.time()
+        timeout_duration = self.pre_speech_timeout_seconds
 
         # Clear queue of any audio from "Yes?" playback
         with self.stream_buffer.mutex:
             self.stream_buffer.queue.clear()
 
-        CHUNK_DURATION_MS: float = 30.0
-
         while True:
             if self.interrupt_event.is_set():
                  logging.warning("Recording interrupted.")
                  return None
+                 
+            # Check time-based timeout outside the queue get block
+            if not is_speaking and (time.time() - start_time > timeout_duration):
+                logging.warning(f"No speech detected after {timeout_duration}s, timing out.")
+                return None
+
             try:
                 data: bytes = self.stream_buffer.get(timeout=0.1)
                 self.stream_buffer.task_done()
@@ -387,18 +405,9 @@ class VoiceAssistant:
                     if len(pre_buffer) > self.pre_buffer_size_chunks:
                         pre_buffer.pop(0)
 
-                    timeout_chunks -= 1
-                    if timeout_chunks <= 0:
-                        logging.warning(f"No speech detected after {self.args.listen_timeout}s, timing out.")
-                        return None
-
             except queue.Empty:
-                # Deduct based on time spent waiting (0.1s timeout)
-                # Note: This is a simplification; a timer-based approach would be more accurate.
-                timeout_chunks -= int(0.1 * 1000 / CHUNK_DURATION_MS)
-                if timeout_chunks <= 0:
-                    logging.warning(f"Recording aborted (timeout).")
-                    return None
+                # Time-based timeout is handled at the start of the loop
+                continue
             except Exception as e:
                 logging.error(f"Unexpected error during recording: {e}")
                 return None
@@ -710,6 +719,7 @@ class VoiceAssistant:
 
         if hasattr(self, 'whisper_model'):
             try:
+                # Simplified cleanup for Whisper model
                 if self.whisper_device == 'cuda' and TORCH_AVAILABLE and torch.cuda.is_available():
                     logging.info("Releasing CUDA memory...")
                     del self.whisper_model
@@ -720,8 +730,6 @@ class VoiceAssistant:
                 logging.debug("Whisper model released.")
             except Exception as e:
                 logging.warning(f"Error releasing Whisper model: {e}")
-            finally:
-                 if 'whisper_model' in self.__dict__: del self.whisper_model
 
         if hasattr(self, 'tts_stop_event'):
             self.tts_stop_event.set()

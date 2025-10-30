@@ -15,7 +15,7 @@ MAX_HISTORY_MESSAGES: int = 20
 # --- 2. Centralized Configuration Defaults ---
 DEFAULT_SETTINGS: dict[str, Any] = {
     'ollama_model': 'llama3',
-    'whisper_model': 'tiny.en',
+    'whisper_model': 'base.en',
     'wakeword_model_path': 'hey_glados.onnx',
     'piper_model_path': 'models/en_US-lessac-medium.onnx',
     'ollama_host': 'http://localhost:11434',

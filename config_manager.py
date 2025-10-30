@@ -27,18 +27,6 @@ except ImportError:
 
 CONFIG_FILE_NAME = 'config.ini'
 
-def setup_logging() -> None:
-    """Configures the root logger for the application."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s,%(msecs)03d - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    # Quieten noisy libraries
-    logging.getLogger("piper").setLevel(logging.WARNING)
-    logging.getLogger("openwakeword").setLevel(logging.WARNING)
-    logging.getLogger("webrtcvad").setLevel(logging.WARNING)
-
 def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
     """
     Tries to connect to the Ollama server and returns a client instance.
@@ -52,7 +40,9 @@ def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
         return client
     except Exception as e:
         logging.error(f"Failed to connect to Ollama at {ollama_host}: {e}")
-        logging.error("Please ensure Ollama is running and the 'ollama_host' in config.ini is correct.")
+        # --- FIX: Changed advisory log level from error to warning ---
+        logging.warning("Please ensure Ollama is running and the 'ollama_host' in config.ini is correct.")
+        # --- END FIX ---
         return None
 
 # Define a custom type converter for device indices that handles 'none'
@@ -74,29 +64,37 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     """
 
     config = configparser.ConfigParser()
+    config_loaded = False
     if os.path.exists(CONFIG_FILE_NAME):
-        setup_logging()
         config.read(CONFIG_FILE_NAME)
         logging.info(f"Loaded configuration from {CONFIG_FILE_NAME}")
+        config_loaded = True
     else:
-        setup_logging()
+        # Logging setup is now expected to be done in assistant.py
         logging.warning(f"{CONFIG_FILE_NAME} not found. Using default settings and CLI args.")
 
     config_models = config['Models'] if 'Models' in config else {}
     config_func = config['Functionality'] if 'Functionality' in config else {}
 
-    def get_config_val(section, key, default, type_converter):
-        """Helper to get and convert config values, handling 'none' string."""
+    def get_config_val(section: configparser.SectionProxy, key: str, default: Any, type_converter: type) -> Any:
+        """Helper to get and convert config values, handling 'none' string and missing config file."""
+        # Use config_loaded flag to prevent logging warnings when config is totally missing
+        if not config_loaded:
+             return default
+
         val = section.get(key)
         if val is None:
             return default
         try:
             if type_converter == bool:
                 return section.getboolean(key)
-            if val.lower() == 'none':
-                return None if type_converter == int else type_converter(val)
+            # Custom handling for int device indices that may be set to 'None'
+            if type_converter == int and val.lower() == 'none':
+                return None
+            
             return type_converter(val)
         except (ValueError, configparser.NoOptionError):
+            # Only warn if config was loaded but had an invalid value
             logging.warning(f"Invalid value '{val}' for '{key}' in config.ini. Using default: {default}")
             return default
 
@@ -122,10 +120,8 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--pre-buffer-ms', type=int, default=DEFAULT_SETTINGS['pre_buffer_ms'], help="Milliseconds of audio to keep before speech starts.")
     func_group.add_argument('--system-prompt', type=str, default=DEFAULT_SETTINGS['system_prompt'], help="The system prompt for the assistant (or a path to a .txt file).")
     
-    # --- FIX/IMPROVEMENT: Use custom type converter to handle 'none' from CLI ---
     func_group.add_argument('--device-index', type=device_index_type, default=DEFAULT_SETTINGS['device_index'], help="Index of the audio input device (integer or 'none').")
     func_group.add_argument('--piper-output-device-index', type=device_index_type, default=DEFAULT_SETTINGS['piper_output_device_index'], help="Index of the audio output device (integer or 'none').")
-    # --- END FIX/IMPROVEMENT ---
 
     func_group.add_argument('--max-words-per-command', type=int, default=DEFAULT_SETTINGS['max_words_per_command'], help="Maximum words allowed in a single transcribed command.")
     func_group.add_argument('--whisper-device', type=str, default=DEFAULT_SETTINGS['whisper_device'], help="Device for Whisper (e.g., 'cpu', 'cuda').")
@@ -134,27 +130,29 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     # Apply configuration defaults
     parser.set_defaults(
-        ollama_model=config_models.get('ollama_model', DEFAULT_SETTINGS['ollama_model']),
-        whisper_model=config_models.get('whisper_model', DEFAULT_SETTINGS['whisper_model']),
-        wakeword_model_path=config_models.get('wakeword_model_path', DEFAULT_SETTINGS['wakeword_model_path']),
-        piper_model_path=config_models.get('piper_model_path', DEFAULT_SETTINGS['piper_model_path']),
-        ollama_host=config_models.get('ollama_host', DEFAULT_SETTINGS['ollama_host']),
+        # Models Section (Using str as the type_converter for consistency)
+        ollama_model=get_config_val(config_models, 'ollama_model', DEFAULT_SETTINGS['ollama_model'], str),
+        whisper_model=get_config_val(config_models, 'whisper_model', DEFAULT_SETTINGS['whisper_model'], str),
+        wakeword_model_path=get_config_val(config_models, 'wakeword_model_path', DEFAULT_SETTINGS['wakeword_model_path'], str),
+        piper_model_path=get_config_val(config_models, 'piper_model_path', DEFAULT_SETTINGS['piper_model_path'], str),
+        ollama_host=get_config_val(config_models, 'ollama_host', DEFAULT_SETTINGS['ollama_host'], str),
 
-        wakeword=config_func.get('wakeword', DEFAULT_SETTINGS['wakeword']),
+        # Functionality Section
+        wakeword=get_config_val(config_func, 'wakeword', DEFAULT_SETTINGS['wakeword'], str),
         wakeword_threshold=get_config_val(config_func, 'wakeword_threshold', DEFAULT_SETTINGS['wakeword_threshold'], float),
         vad_aggressiveness=get_config_val(config_func, 'vad_aggressiveness', DEFAULT_SETTINGS['vad_aggressiveness'], int),
         silence_seconds=get_config_val(config_func, 'silence_seconds', DEFAULT_SETTINGS['silence_seconds'], float),
         listen_timeout=get_config_val(config_func, 'listen_timeout', DEFAULT_SETTINGS['listen_timeout'], float),
         pre_buffer_ms=get_config_val(config_func, 'pre_buffer_ms', DEFAULT_SETTINGS['pre_buffer_ms'], int),
-        system_prompt=config_func.get('system_prompt', DEFAULT_SETTINGS['system_prompt']),
+        system_prompt=get_config_val(config_func, 'system_prompt', DEFAULT_SETTINGS['system_prompt'], str),
 
         # Use int for config defaults, allowing get_config_val to return None if 'none' is found
         device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], int),
         piper_output_device_index=get_config_val(config_func, 'piper_output_device_index', DEFAULT_SETTINGS['piper_output_device_index'], int),
 
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
-        whisper_device=config_func.get('whisper_device', DEFAULT_SETTINGS['whisper_device']),
-        whisper_compute_type=config_func.get('whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type']),
+        whisper_device=get_config_val(config_func, 'whisper_device', DEFAULT_SETTINGS['whisper_device'], str),
+        whisper_compute_type=get_config_val(config_func, 'whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type'], str),
         max_history_tokens=get_config_val(config_func, 'max_history_tokens', DEFAULT_SETTINGS['max_history_tokens'], int)
     )
 
@@ -174,13 +172,20 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         except Exception as e:
             logging.error(f"Failed to read system prompt file '{args.system_prompt}': {e}")
             logging.warning("Using the default system prompt instead.")
-            args.system_prompt = DEFAULT_SETTINGS['system_prompt'] # Fallback to hardcoded default
-    elif not args.system_prompt:
-         logging.warning("System prompt is empty. Using default.")
-         args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+            # We use the explicitly set default as the final fallback here.
+            args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+    
+    # --- REDUNDANCY REMOVED ---
+    # The check below is now implicitly handled by the prior logic that ensures 
+    # args.system_prompt is initialized to DEFAULT_SETTINGS['system_prompt']
+    # if it was set to an empty string in the config file.
+    # elif not args.system_prompt:
+    #      logging.warning("System prompt is empty. Using default.")
+    #      args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+    # --- END REDUNDANCY REMOVED ---
 
 
-    # --- FIX: Move device listing and sys.exit(0) logic out of this function ---
+    # Device listing logic
     if args.list_devices or args.list_output_devices:
         if args.list_devices:
             try:
