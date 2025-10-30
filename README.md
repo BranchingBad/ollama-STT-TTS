@@ -9,22 +9,22 @@ The assistant operates in a continuous loop with the following flow:
 ```mermaid
 flowchart LR
     A[Microphone] --> B(openwakeword);
-    B -- "hey mycroft" --> C(webrtcvad);
-    C -- "Records until silence" --> D[Whisper STT];
+    B -- "hey glados" --> C(webrtcvad);
+    C -- "Records until silence" --> D[faster-whisper STT];
     D -- "Transcribes audio" --> E[Ollama LLM];
-    E -- "Generates response" --> F[pyttsx3 TTS];
+    E -- "Generates streaming response" --> F[Piper TTS];
     F -- "Speaks response" --> G[Speaker];
 ```
 
 ## 💡 Features
 - **100% Local**: No cloud services are required for STT, TTS, or the LLM.
 - **Hands-Free**: Uses openwakeword for wakeword detection.
+- **Low-Latency TTS**: Uses the Piper TTS engine for fast, high-quality voice output.
+- **Optimized STT**: Leverages faster-whisper models for efficient and accurate speech-to-text.
 - **Smart Recording**: Uses webrtcvad (Voice Activity Detection) to automatically stop recording when you finish speaking.
-- **High-Quality Transcription**: Leverages faster-whisper models for accurate speech-to-text.
 - **Flexible LLM**: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
-- **Cross-Platform Audio**: Uses sounddevice for audio input/output, replacing the older PyAudio.
-
-Configurable: Settings adjustable via ``config.ini`` and command-line arguments.
+- **Cross-Platform Audio**: Uses sounddevice for audio input/output.
+- **Configurable**: Settings adjustable via ``config.ini`` and command-line arguments.
 
 ## 🔩 1. Prerequisites
 Before you begin, ensure you have the following installed and running:
@@ -36,12 +36,8 @@ You must have the Ollama application installed and running.
 You need at least one model downloaded for Ollama to use.
 
 ```Bash
-# We recommend Llama 3 or Phi-3 Mini
+# The default model is llama3
 ollama pull llama3
-ollama pull phi3:mini
-
-# Or, use another model
-ollama pull mistral
 ```
 ### ⚙️ C. System Dependencies
 The sounddevice library requires portaudio. pyttsx3 often requires espeak. faster-whisper may require ffmpeg for audio handling.
@@ -55,13 +51,15 @@ sudo dnf install portaudio-devel gcc python3-devel ffmpeg espeak pulseaudio-libs
 
 On Debian/Ubuntu Linux:
 ```Bash
-sudo apt-get update && sudo apt-get install portaudio19-dev ffmpeg espeak
+sudo apt-get update && sudo apt-get install portaudio19-dev ffmpeg
 ```
 
 On macOS (via Homebrew):
 ```Bash
 brew install portaudio ffmpeg espeak
 ```
+### 🗣️ D. Piper TTS Model
+The assistant requires the Piper ONNX model and its corresponding JSON config file. By default, these files must be in the models/ directory, matching the paths specified in ``config.ini``.
 
 ## 🔧 2. Installation
 Clone this repository to your local machine:
@@ -189,10 +187,6 @@ Functionality Group:
 ``--system-prompt``: The system prompt for the assistant, or a path to a .txt file containing the prompt. (Default: You are a friendly, concise, and intelligent voice assistant named GLaDOS. Keep your responses short and witty.)
 
 ``--device-index``: Index of the audio input device (use --list-devices). Set to None for default. (Default: ``13 in config.ini, but None in code defaults``)
-
-``--tts-voice-id``: ID or name of the pyttsx3 voice (use --list-voices). Set to None for default. (Default: ``None``)
-
-``--tts-volume``: TTS volume (0.0 to 1.0). (Default: ``1.0``)
 
 ``--max-words-per-command``: Maximum words allowed in a single transcribed command. (Default: ``60``)
 
