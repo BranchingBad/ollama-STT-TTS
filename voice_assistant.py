@@ -739,4 +739,5 @@ class VoiceAssistant:
             
             if self.tts_thread.is_alive():
                 self.tts_thread.join(timeout=1.0)
-                if self.tts_thread.is_
+                if self.tts_thread.is_alive():  # <--- Completing the check
+                    logging.warning("TTS thread did not shut down cleanly.")
