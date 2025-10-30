@@ -1,7 +1,7 @@
 numpy
 ollama
 openwakeword
-pyttsx3
 webrtcvad
 faster-whisper
 sounddevice
+piper-tts

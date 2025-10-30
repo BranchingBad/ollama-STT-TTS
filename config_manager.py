@@ -1,5 +1,3 @@
-# Updated config_manager.py
-
 #!/usr/bin/env python3
 
 """
@@ -20,8 +18,8 @@ from typing import Any, Tuple, Optional
 try:
     from audio_utils import (
         DEFAULT_SETTINGS,
-        list_audio_devices,
-        list_tts_voices
+        list_audio_input_devices,
+        list_audio_output_devices
     )
 except ImportError:
     print("FATAL ERROR: Could not import from audio_utils.py. Ensure the file is present.")
@@ -31,16 +29,13 @@ CONFIG_FILE_NAME = 'config.ini'
 
 def setup_logging() -> None:
     """Configures the root logger for the application."""
-    # --- UPDATED FORMAT ---
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s,%(msecs)03d - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    # --- END UPDATE ---
-
     # Quieten noisy libraries
-    logging.getLogger("pyttsx3").setLevel(logging.WARNING)
+    logging.getLogger("piper").setLevel(logging.WARNING)
     logging.getLogger("openwakeword").setLevel(logging.WARNING)
     logging.getLogger("webrtcvad").setLevel(logging.WARNING)
 
@@ -68,16 +63,11 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     config = configparser.ConfigParser()
     if os.path.exists(CONFIG_FILE_NAME):
-        # --- Need to call setup_logging *before* reading config ---
-        # --- so that warnings during config load are formatted ---
         setup_logging()
-        # --- END CHANGE ---
         config.read(CONFIG_FILE_NAME)
         logging.info(f"Loaded configuration from {CONFIG_FILE_NAME}")
     else:
-        # --- Call setup_logging here too for consistency ---
         setup_logging()
-        # --- END CHANGE ---
         logging.warning(f"{CONFIG_FILE_NAME} not found. Using default settings and CLI args.")
 
     config_models = config['Models'] if 'Models' in config else {}
@@ -100,13 +90,14 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     parser = argparse.ArgumentParser(description="A hands-free voice assistant for Ollama.")
 
     parser.add_argument('--list-devices', action='store_true', help="List available audio input devices and exit.")
-    parser.add_argument('--list-voices', action='store_true', help="List available TTS voices and exit.")
+    parser.add_argument('--list-output-devices', action='store_true', help="List available audio output devices and exit.")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging.")
 
     model_group = parser.add_argument_group('Models')
     model_group.add_argument('--ollama-model', type=str, default=DEFAULT_SETTINGS['ollama_model'], help="Name of the Ollama model to use.")
     model_group.add_argument('--whisper-model', type=str, default=DEFAULT_SETTINGS['whisper_model'], help="Name of the faster-whisper model to use (e.g., tiny.en, base.en).")
     model_group.add_argument('--wakeword-model-path', type=str, default=DEFAULT_SETTINGS['wakeword_model_path'], help="Path to the .onnx wakeword model file.")
+    model_group.add_argument('--piper-model-path', type=str, default=DEFAULT_SETTINGS['piper_model_path'], help="Path to the .onnx Piper TTS model file.")
     model_group.add_argument('--ollama-host', type=str, default=DEFAULT_SETTINGS['ollama_host'], help="URL of the Ollama server.")
 
     func_group = parser.add_argument_group('Functionality')
@@ -118,8 +109,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--pre-buffer-ms', type=int, default=DEFAULT_SETTINGS['pre_buffer_ms'], help="Milliseconds of audio to keep before speech starts.")
     func_group.add_argument('--system-prompt', type=str, default=DEFAULT_SETTINGS['system_prompt'], help="The system prompt for the assistant (or a path to a .txt file).")
     func_group.add_argument('--device-index', type=lambda x: int(x) if x.lower() != 'none' else None, default=DEFAULT_SETTINGS['device_index'], help="Index of the audio input device (use --list-devices).")
-    func_group.add_argument('--tts-voice-id', type=str, default=DEFAULT_SETTINGS['tts_voice_id'], help="ID or name of the pyttsx3 voice (use --list-voices).")
-    func_group.add_argument('--tts-volume', type=float, default=DEFAULT_SETTINGS['tts_volume'], help="TTS volume (0.0 to 1.0).")
+    func_group.add_argument('--piper-output-device-index', type=lambda x: int(x) if x.lower() != 'none' else None, default=DEFAULT_SETTINGS['piper_output_device_index'], help="Index of the audio output device (use --list-output-devices).")
     func_group.add_argument('--max-words-per-command', type=int, default=DEFAULT_SETTINGS['max_words_per_command'], help="Maximum words allowed in a single transcribed command.")
     func_group.add_argument('--whisper-device', type=str, default=DEFAULT_SETTINGS['whisper_device'], help="Device for Whisper (e.g., 'cpu', 'cuda').")
     func_group.add_argument('--whisper-compute-type', type=str, default=DEFAULT_SETTINGS['whisper_compute_type'], help="Compute type for Whisper (e.g., 'int8', 'float16').")
@@ -129,6 +119,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         ollama_model=config_models.get('ollama_model', DEFAULT_SETTINGS['ollama_model']),
         whisper_model=config_models.get('whisper_model', DEFAULT_SETTINGS['whisper_model']),
         wakeword_model_path=config_models.get('wakeword_model_path', DEFAULT_SETTINGS['wakeword_model_path']),
+        piper_model_path=config_models.get('piper_model_path', DEFAULT_SETTINGS['piper_model_path']),
         ollama_host=config_models.get('ollama_host', DEFAULT_SETTINGS['ollama_host']),
 
         wakeword=config_func.get('wakeword', DEFAULT_SETTINGS['wakeword']),
@@ -140,8 +131,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         system_prompt=config_func.get('system_prompt', DEFAULT_SETTINGS['system_prompt']),
 
         device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], lambda x: int(x) if x.lower() != 'none' else None),
-        tts_voice_id=get_config_val(config_func, 'tts_voice_id', DEFAULT_SETTINGS['tts_voice_id'], str),
-        tts_volume=get_config_val(config_func, 'tts_volume', DEFAULT_SETTINGS['tts_volume'], float),
+        piper_output_device_index=get_config_val(config_func, 'piper_output_device_index', DEFAULT_SETTINGS['piper_output_device_index'], lambda x: int(x) if x.lower() != 'none' else None),
 
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
         whisper_device=config_func.get('whisper_device', DEFAULT_SETTINGS['whisper_device']),
@@ -151,7 +141,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     args = parser.parse_args()
 
-    # setup_logging() # Moved earlier
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
         logging.debug("DEBUG logging enabled.")
@@ -165,26 +154,24 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         except Exception as e:
             logging.error(f"Failed to read system prompt file '{args.system_prompt}': {e}")
             logging.warning("Using the default system prompt instead.")
-            # --- Fallback to default ---
             args.system_prompt = DEFAULT_SETTINGS['system_prompt']
-            # --- END CHANGE ---
     elif not args.system_prompt:
          logging.warning("System prompt is empty. Using default.")
          args.system_prompt = DEFAULT_SETTINGS['system_prompt']
 
 
-    if args.list_devices or args.list_voices:
+    if args.list_devices or args.list_output_devices:
         if args.list_devices:
             try:
-                list_audio_devices()
+                list_audio_input_devices()
             except Exception as e:
-                logging.error(f"Could not list audio devices: {e}")
-
-        if args.list_voices:
+                logging.error(f"Could not list audio input devices: {e}")
+        
+        if args.list_output_devices:
             try:
-                list_tts_voices()
+                list_audio_output_devices()
             except Exception as e:
-                logging.error(f"Could not list TTS voices: {e}")
+                logging.error(f"Could not list audio output devices: {e}")
 
         sys.exit(0)
 
