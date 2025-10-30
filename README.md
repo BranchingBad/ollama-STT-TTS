@@ -24,15 +24,15 @@ flowchart LR
 - **Flexible LLM**: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
 - **Cross-Platform Audio**: Uses sounddevice for audio input/output, replacing the older PyAudio.
 
-Configurable: Settings adjustable via config.ini and command-line arguments.
+Configurable: Settings adjustable via ``config.ini`` and command-line arguments.
 
 ## 🔩 1. Prerequisites
 Before you begin, ensure you have the following installed and running:
 
-### A. Ollama
+### 🦙 A. Ollama
 You must have the Ollama application installed and running.
 
-### B. Pull an Ollama Model
+### 📦 B. Pull an Ollama Model
 You need at least one model downloaded for Ollama to use.
 
 ```Bash
@@ -43,7 +43,7 @@ ollama pull phi3:mini
 # Or, use another model
 ollama pull mistral
 ```
-### C. System Dependencies
+### ⚙️ C. System Dependencies
 The sounddevice library requires portaudio. pyttsx3 often requires espeak. faster-whisper may require ffmpeg for audio handling.
 
 On Fedora/RHEL Linux:
