@@ -130,8 +130,11 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         pre_buffer_ms=get_config_val(config_func, 'pre_buffer_ms', DEFAULT_SETTINGS['pre_buffer_ms'], int),
         system_prompt=config_func.get('system_prompt', DEFAULT_SETTINGS['system_prompt']),
 
-        device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], lambda x: int(x) if x.lower() != 'none' else None),
-        piper_output_device_index=get_config_val(config_func, 'piper_output_device_index', DEFAULT_SETTINGS['piper_output_device_index'], lambda x: int(x) if x.lower() != 'none' else None),
+        # --- IMPROVEMENT: Simplified the type_converter to just 'int' ---
+        # The get_config_val function already handles the 'none' string.
+        device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], int),
+        piper_output_device_index=get_config_val(config_func, 'piper_output_device_index', DEFAULT_SETTINGS['piper_output_device_index'], int),
+        # --- END IMPROVEMENT ---
 
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
         whisper_device=config_func.get('whisper_device', DEFAULT_SETTINGS['whisper_device']),
