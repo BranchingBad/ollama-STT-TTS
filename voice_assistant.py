@@ -131,6 +131,11 @@ class VoiceAssistant:
                 config = json.load(f)
                 self.piper_sample_rate = int(config['audio']['sample_rate'])
                 logging.info(f"Piper model sample rate: {self.piper_sample_rate} Hz")
+                
+            # Check for consistency with audio_utils RATE (16000)
+            if self.piper_sample_rate != RATE:
+                 logging.warning(f"Piper sample rate ({self.piper_sample_rate} Hz) differs from VAD/Whisper rate ({RATE} Hz). Audio output quality may be affected.")
+
 
             # Load Piper voice
             self.piper_voice = PiperVoice.load(self.piper_model_path, self.piper_config_path)
@@ -230,10 +235,7 @@ class VoiceAssistant:
                     if self.interrupt_event.is_set():
                         break
                     
-                    # --- FINAL TTS FIX ---
-                    # The debug log confirmed the attribute is 'audio_int16_bytes'.
                     audio_np = np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16)
-                    # --- END TTS FIX ---
                     
                     stream.write(audio_np)
 
@@ -289,12 +291,6 @@ class VoiceAssistant:
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
         self.is_speaking_event.clear()
-        
-        # --- DEADLOCK FIX ---
-        # self.is_processing_command.clear() # <--- REMOVED
-        # This flag must *only* be cleared by the finally
-        # block in process_user_command.
-        # --- END FIX ---
 
     def _audio_monitor_worker(self) -> None:
         """Monitors stream_buffer for barge-in during LLM/TTS."""
@@ -312,15 +308,8 @@ class VoiceAssistant:
                 if not self.interrupt_event.is_set():
                     is_speech = self.vad.is_speech(chunk, RATE)
                     if is_speech:
-                        # --- DEADLOCK FIX ---
-                        # We MUST NOT call stop_generation() here.
-                        # We just set the flag. The main thread (process_user_command)
-                        # will see this flag and stop itself. This thread
-                        # will keep clearing the buffer until the main thread
-                        # clears 'is_processing_command'.
                         logging.info("User interruption (barge-in) detected!")
                         self.interrupt_event.set()
-                        # --- END FIX ---
                 
                 self.stream_buffer.task_done()
         logging.debug("Audio monitor stopped.")
@@ -404,7 +393,8 @@ class VoiceAssistant:
                         return None
 
             except queue.Empty:
-                logging.debug("Buffer empty, waiting...")
+                # Deduct based on time spent waiting (0.1s timeout)
+                # Note: This is a simplification; a timer-based approach would be more accurate.
                 timeout_chunks -= int(0.1 * 1000 / CHUNK_DURATION_MS)
                 if timeout_chunks <= 0:
                     logging.warning(f"Recording aborted (timeout).")
@@ -453,26 +443,36 @@ class VoiceAssistant:
     def _manage_history_turn_fallback(self) -> None:
         current_context_length = len(self.messages) - 1
         current_turns = current_context_length // 2
-        if current_turns > MAX_HISTORY_MESSAGES:
-            turns_to_remove = current_turns - MAX_HISTORY_MESSAGES
+        
+        if current_turns >= MAX_HISTORY_MESSAGES:
+            turns_to_remove = current_turns - MAX_HISTORY_MESSAGES + 1
             messages_to_remove = turns_to_remove * 2
             end_index_to_remove = 1 + messages_to_remove
+            
             if end_index_to_remove >= len(self.messages):
                  logging.error(f"History pruning fallback error. Skipping.")
                  return
+            
             self.messages = [self.messages[0]] + self.messages[end_index_to_remove:]
             new_turns = (len(self.messages) - 1) // 2
             logging.warning(f"History pruned (TURN FALLBACK). New size: {new_turns} turns.")
 
     def _update_history(self, user_text: str, assistant_response: str) -> None:
+        """
+        Updates history with the assistant's response. Rolls back the user message
+        if the response was empty (due to an empty LLM output or interruption).
+        """
         if assistant_response.strip():
             self.messages.append({'role': 'assistant', 'content': assistant_response})
         else:
+            # If the response was empty, roll back the user's message.
             if self.messages and self.messages[-1]['role'] == 'user' and self.messages[-1]['content'] == user_text:
                  self.messages.pop()
-                 logging.warning("LLM response empty, user message rolled back.")
-            elif self.messages:
-                 logging.error(f"Failed to rollback user message.")
+                 logging.warning("LLM response empty or interrupted, user message rolled back.")
+                 # Reset token count to 0 to ensure turn-based fallback is used on the next command.
+                 self.last_known_token_count = 0
+            else:
+                 logging.error(f"Failed to roll back user message. History structure is unexpected.")
 
     def get_ollama_response_stream(self, user_text: str) -> None:
         full_response = ""
@@ -497,7 +497,13 @@ class VoiceAssistant:
                 logging.error(f"Error connecting to Ollama: {e}")
                 self.speak("I'm sorry, I seem to have lost my connection. Please check if the Ollama server is running.")
                 full_response = "" 
-                self.messages.pop() 
+                
+                # Pop the user message and reset token count on connection failure
+                if self.messages and self.messages[-1]['role'] == 'user' and self.messages[-1]['content'] == user_text:
+                    self.messages.pop()
+                    self.last_known_token_count = 0 
+                    logging.debug("User message rolled back due to Ollama connection error.")
+                
                 return
 
             with self._ollama_stream_manager(response_stream) as stream:
@@ -530,8 +536,10 @@ class VoiceAssistant:
             if final_chunk:
                 self.last_known_token_count = final_chunk.get('prompt_eval_count', 0)
                 logging.debug(f"Updated history. New total token count: {self.last_known_token_count}")
-            elif not full_response:
-                self.last_known_token_count = 0
+            # Note: If full_response was empty (due to an error or interruption), 
+            # the last_known_token_count was already reset to 0 in _update_history, 
+            # making any further explicit reset here redundant.
+
 
     def process_user_command(self) -> bool:
         """
@@ -557,12 +565,9 @@ class VoiceAssistant:
             
             if self.interrupt_event.is_set(): return False # Interrupted during recording
             
-            # --- RACE CONDITION FIX 1 ---
-            # Clear the buffer *after* recording and *before* starting
-            # the monitor to prevent an instant barge-in.
+            # Clear the buffer after recording.
             with self.stream_buffer.mutex:
                 self.stream_buffer.queue.clear()
-            # --- END FIX ---
 
             logging.info("Transcribing audio...")
             user_text: str = self.transcribe_audio(audio_data)
@@ -603,13 +608,6 @@ class VoiceAssistant:
                 self.stop_generation("Clearing TTS queue after interruption.")
             else:
                 self.wait_for_speech()
-            
-            # --- RACE CONDITION FIX 2 ---
-            # self.interrupt_event.clear() # <--- REMOVED
-            # We MUST NOT clear the interrupt here. It creates a race
-            # condition with the monitor thread. We now clear it at the
-            # *start* of the next process_user_command call.
-            # --- END FIX ---
 
             return False
         
@@ -645,6 +643,9 @@ class VoiceAssistant:
         except Exception as e:
             logging.critical(f"FATAL: Failed to open audio stream: {e}")
             return
+
+        # Ensure OWW model state is clean at startup.
+        self.oww_model.reset()
 
         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
 
@@ -728,9 +729,8 @@ class VoiceAssistant:
             if hasattr(self, 'tts_queue'):
                 self.tts_queue.put(None) # Send shutdown signal
             
-            # --- TYPO FIX ---
+            # Ensuring correct attribute existence check
             if hasattr(self, 'tts_thread') and self.tts_thread.is_alive():
-            # --- END TYPO FIX ---
                 self.tts_thread.join(timeout=1.0)
                 if self.tts_thread.is_alive():
                     logging.warning("TTS thread did not shut down cleanly.")

@@ -12,7 +12,7 @@ import logging
 import sys
 import os
 import ollama
-from typing import Any, Tuple, Optional
+from typing import Any, Tuple, Optional, Literal
 
 # Import defaults and helpers from audio_utils
 try:
@@ -55,10 +55,22 @@ def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
         logging.error("Please ensure Ollama is running and the 'ollama_host' in config.ini is correct.")
         return None
 
-def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser]:
+# Define a custom type converter for device indices that handles 'none'
+def device_index_type(value: str) -> Optional[int]:
+    """Converts a string argument to an int index or None."""
+    if value.lower() == 'none':
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid device index: '{value}'. Must be an integer or 'none'.")
+
+def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser, Literal[True, False]]:
     """
     Loads settings from config.ini, parses command-line arguments,
     and sets up logging.
+    
+    Returns: A tuple containing (parsed arguments, config object, should_exit_flag)
     """
 
     config = configparser.ConfigParser()
@@ -74,6 +86,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     config_func = config['Functionality'] if 'Functionality' in config else {}
 
     def get_config_val(section, key, default, type_converter):
+        """Helper to get and convert config values, handling 'none' string."""
         val = section.get(key)
         if val is None:
             return default
@@ -81,7 +94,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
             if type_converter == bool:
                 return section.getboolean(key)
             if val.lower() == 'none':
-                return None
+                return None if type_converter == int else type_converter(val)
             return type_converter(val)
         except (ValueError, configparser.NoOptionError):
             logging.warning(f"Invalid value '{val}' for '{key}' in config.ini. Using default: {default}")
@@ -108,13 +121,18 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--listen-timeout', type=float, default=DEFAULT_SETTINGS['listen_timeout'], help="Seconds to wait for speech before timing out.")
     func_group.add_argument('--pre-buffer-ms', type=int, default=DEFAULT_SETTINGS['pre_buffer_ms'], help="Milliseconds of audio to keep before speech starts.")
     func_group.add_argument('--system-prompt', type=str, default=DEFAULT_SETTINGS['system_prompt'], help="The system prompt for the assistant (or a path to a .txt file).")
-    func_group.add_argument('--device-index', type=lambda x: int(x) if x.lower() != 'none' else None, default=DEFAULT_SETTINGS['device_index'], help="Index of the audio input device (use --list-devices).")
-    func_group.add_argument('--piper-output-device-index', type=lambda x: int(x) if x.lower() != 'none' else None, default=DEFAULT_SETTINGS['piper_output_device_index'], help="Index of the audio output device (use --list-output-devices).")
+    
+    # --- FIX/IMPROVEMENT: Use custom type converter to handle 'none' from CLI ---
+    func_group.add_argument('--device-index', type=device_index_type, default=DEFAULT_SETTINGS['device_index'], help="Index of the audio input device (integer or 'none').")
+    func_group.add_argument('--piper-output-device-index', type=device_index_type, default=DEFAULT_SETTINGS['piper_output_device_index'], help="Index of the audio output device (integer or 'none').")
+    # --- END FIX/IMPROVEMENT ---
+
     func_group.add_argument('--max-words-per-command', type=int, default=DEFAULT_SETTINGS['max_words_per_command'], help="Maximum words allowed in a single transcribed command.")
     func_group.add_argument('--whisper-device', type=str, default=DEFAULT_SETTINGS['whisper_device'], help="Device for Whisper (e.g., 'cpu', 'cuda').")
     func_group.add_argument('--whisper-compute-type', type=str, default=DEFAULT_SETTINGS['whisper_compute_type'], help="Compute type for Whisper (e.g., 'int8', 'float16').")
     func_group.add_argument('--max-history-tokens', type=int, default=DEFAULT_SETTINGS['max_history_tokens'], help="Maximum token context for chat history.")
 
+    # Apply configuration defaults
     parser.set_defaults(
         ollama_model=config_models.get('ollama_model', DEFAULT_SETTINGS['ollama_model']),
         whisper_model=config_models.get('whisper_model', DEFAULT_SETTINGS['whisper_model']),
@@ -130,11 +148,9 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         pre_buffer_ms=get_config_val(config_func, 'pre_buffer_ms', DEFAULT_SETTINGS['pre_buffer_ms'], int),
         system_prompt=config_func.get('system_prompt', DEFAULT_SETTINGS['system_prompt']),
 
-        # --- IMPROVEMENT: Simplified the type_converter to just 'int' ---
-        # The get_config_val function already handles the 'none' string.
+        # Use int for config defaults, allowing get_config_val to return None if 'none' is found
         device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], int),
         piper_output_device_index=get_config_val(config_func, 'piper_output_device_index', DEFAULT_SETTINGS['piper_output_device_index'], int),
-        # --- END IMPROVEMENT ---
 
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
         whisper_device=config_func.get('whisper_device', DEFAULT_SETTINGS['whisper_device']),
@@ -143,6 +159,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     )
 
     args = parser.parse_args()
+    should_exit_flag = False
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -163,6 +180,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
          args.system_prompt = DEFAULT_SETTINGS['system_prompt']
 
 
+    # --- FIX: Move device listing and sys.exit(0) logic out of this function ---
     if args.list_devices or args.list_output_devices:
         if args.list_devices:
             try:
@@ -176,6 +194,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
             except Exception as e:
                 logging.error(f"Could not list audio output devices: {e}")
 
-        sys.exit(0) # Exit after listing devices
+        should_exit_flag = True # Signal the main loop to exit
 
-    return args, config
+    return args, config, should_exit_flag

@@ -18,28 +18,36 @@ def main() -> None:
     """The entry point for the assistant application."""
     assistant: VoiceAssistant | None = None
     try:
-        args, _ = load_config_and_args()
+        # load_config_and_args now returns an additional flag
+        args, _, should_exit = load_config_and_args()
         
-        # --- IMPROVEMENT ---
-        # Get the client *once* and pass it to the assistant.
-        # This avoids redundant client creation and allows the assistant
-        ollama_client = get_ollama_client(args.ollama_host) if not (args.list_devices or args.list_output_devices) else None
-        if ollama_client is None and not args.list_devices and not args.list_output_devices:
+        # --- NEW LOGIC: Handle device listing exit flag ---
+        if should_exit:
+            # config_manager has already printed the device list.
+            # Exit cleanly without running the rest of the assistant initialization.
+            sys.exit(0)
+        # --- END NEW LOGIC ---
+
+        # Get the Ollama client *once* and pass it to the assistant.
+        # This function returns None if connection fails.
+        ollama_client = get_ollama_client(args.ollama_host)
+        
+        # --- IMPROVEMENT: Simplify the warning check ---
+        # The ollama_client is only None here if the connection was attempted and failed.
+        if ollama_client is None:
             logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
-            # We still allow it to run, in case the user wants to fix Ollama
-            # while the script is live. The class will handle the 'None' client.
+        # --- END IMPROVEMENT ---
 
         assistant = VoiceAssistant(args, ollama_client)
-        # --- END IMPROVEMENT ---
         
         assistant.run()
 
     except IOError as e:
-        # This catches PyAudio stream errors during initialization
+        # This catches PyAudio/sounddevice stream errors during initialization
         logging.critical(f"FATAL ERROR during audio initialization: {e}")
         logging.critical("Check microphone connectivity or use --list-devices.")
     except (RuntimeError, OSError, ValueError) as e:
-        # This catches model loading errors
+        # This catches model loading errors (Whisper, Piper, OpenWakeWord)
         logging.critical(f"FATAL ERROR during model loading: {e}")
     except Exception as e:
         logging.critical(f"An unexpected error occurred: {e}", exc_info=True)
@@ -52,5 +60,5 @@ if __name__ == "__main__":
     try:
         main()
     except SystemExit:
-        # This allows --list-devices and --list-voices to exit cleanly
+        # This allows --list-devices and --list-output-devices to exit cleanly
         pass
