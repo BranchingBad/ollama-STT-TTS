@@ -53,10 +53,6 @@ On Debian/Ubuntu Linux:
 sudo apt-get update && sudo apt-get install portaudio19-dev ffmpeg
 ```
 
-On macOS (via Homebrew):
-```Bash
-brew install portaudio ffmpeg
-```
 ### 🗣️ D. Piper TTS Model
 The assistant requires the Piper ONNX model and its corresponding JSON config file. By default, these files must be in the ``models/`` directory, matching the paths specified in ``config.ini``.
 
@@ -153,7 +149,7 @@ Example: Run with different settings:
 python assistant.py --wakeword-threshold 0.5 --vad-aggressiveness 1 --ollama-model llama3 --device-index 2
 ```
 
-All Arguments (Defaults from ``config.ini`` and ``audio_utils.py`` shown):
+### All Arguments (Defaults from ``config.ini`` and ``audio_utils.py`` shown):
 
 ``--list-devices``: List available audio input devices and exit.
 
@@ -161,7 +157,7 @@ All Arguments (Defaults from ``config.ini`` and ``audio_utils.py`` shown):
 
 ``--debug``: Enable debug logging.
 
-Models Group:
+### Models Group:
 
 ``--ollama-model``: Name of the Ollama model to use. (Default: ``phi3:mini``)
 
@@ -171,7 +167,7 @@ Models Group:
 
 ``--ollama-host``: URL of the Ollama server. (Default: ``http://localhost:11434``)
 
-Functionality Group:
+### Functionality Group:
 
 ``--wakeword``: The wakeword phrase. (Default: ``hey glados``)
 
