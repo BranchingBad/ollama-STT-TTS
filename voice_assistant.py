@@ -341,6 +341,7 @@ class VoiceAssistant:
                             logging.info("Silence detected, processing...")
                             break
                     else:
+                        # This log line was added in a previous step to debug VAD
                         logging.info("VAD: Still hearing speech...")
                         silent_chunks = 0
                 elif is_speech:
@@ -551,7 +552,12 @@ class VoiceAssistant:
 
         logging.info(f"Sending to {self.args.ollama_model}...")
         self.get_ollama_response_stream(user_text) # speak calls within this handle logging
-        self.wait_for_speech()
+        
+        # --- LATEST FIX: Avoid deadlock on barge-in ---
+        if not self.interrupt_event.is_set():
+            self.wait_for_speech()
+        # --- END FIX ---
+
         self.interrupt_event.clear()
         return False
 
@@ -604,7 +610,13 @@ class VoiceAssistant:
                     audio_np_int16: npt.NDArray[np.int16] = np.frombuffer(audio_chunk, dtype=np.int16)
                     prediction: dict[str, float] = self.oww_model.predict(audio_np_int16)
 
-                    if prediction.get(self.wakeword_model_key, 0) > self.args.wakeword_threshold:
+                    # --- Diagnostic logging for wakeword ---
+                    score = prediction.get(self.wakeword_model_key, 0)
+                    if score > 0.1: # Only log if there's *some* sound
+                        logging.debug(f"Wakeword score: {score:.2f} (Threshold: {self.args.wakeword_threshold})")
+                    # --- End diagnostic logging ---
+
+                    if score > self.args.wakeword_threshold:
                         logging.info(f"Wakeword '{self.args.wakeword}' detected!")
                         self.oww_model.reset()
                         # Removed self.is_processing_command.set() here - let process_user_command manage it
