@@ -166,25 +166,23 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     # Check if system_prompt is a file path
     if args.system_prompt and os.path.isfile(args.system_prompt):
         logging.info(f"Loading system prompt from file: {args.system_prompt}")
+        file_content = None
         try:
             with open(args.system_prompt, 'r', encoding='utf-8') as f:
-                args.system_prompt = f.read().strip()
+                file_content = f.read().strip()
+            
+            # --- IMPROVEMENT: Explicit fallback if file is empty ---
+            if file_content:
+                args.system_prompt = file_content
+            else:
+                logging.warning(f"System prompt file '{args.system_prompt}' is empty. Using default.")
+                args.system_prompt = DEFAULT_SETTINGS['system_prompt']
         except Exception as e:
             logging.error(f"Failed to read system prompt file '{args.system_prompt}': {e}")
             logging.warning("Using the default system prompt instead.")
-            # We use the explicitly set default as the final fallback here.
             args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+        # --- END IMPROVEMENT ---
     
-    # --- REDUNDANCY REMOVED ---
-    # The check below is now implicitly handled by the prior logic that ensures 
-    # args.system_prompt is initialized to DEFAULT_SETTINGS['system_prompt']
-    # if it was set to an empty string in the config file.
-    # elif not args.system_prompt:
-    #      logging.warning("System prompt is empty. Using default.")
-    #      args.system_prompt = DEFAULT_SETTINGS['system_prompt']
-    # --- END REDUNDANCY REMOVED ---
-
-
     # Device listing logic
     if args.list_devices or args.list_output_devices:
         if args.list_devices:

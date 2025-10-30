@@ -30,7 +30,7 @@ from piper import PiperVoice
 
 # Import external modules
 from audio_utils import (
-    FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_NORMALIZATION,
+    FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX, # UPDATED: Renamed from INT16_NORMALIZATION
     SENTENCE_END_PUNCTUATION, MAX_TTS_ERRORS, MAX_HISTORY_MESSAGES
 )
 
@@ -211,7 +211,6 @@ class VoiceAssistant:
         consecutive_errors = 0
         while not self.tts_stop_event.is_set():
             text: str | None = None
-            stream: sd.OutputStream | None = None
             try:
                 text = self.tts_queue.get(timeout=0.1)
                 if text is None:  # Shutdown signal
@@ -222,22 +221,24 @@ class VoiceAssistant:
 
                 self.is_speaking_event.set()
 
-                stream = sd.OutputStream(
+                # --- FIX: Use context manager for sounddevice.OutputStream ---
+                with sd.OutputStream(
                     samplerate=self.piper_sample_rate,
                     device=self.args.piper_output_device_index,
                     channels=1,
                     dtype='int16'
-                )
-                stream.start()
-
-                # Synthesize and play audio chunk by chunk
-                for audio_chunk in self.piper_voice.synthesize(text):
-                    if self.interrupt_event.is_set():
-                        break
+                ) as stream:
                     
-                    audio_np = np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16)
-                    
-                    stream.write(audio_np)
+                    # Synthesize and play audio chunk by chunk
+                    for audio_chunk in self.piper_voice.synthesize(text):
+                        if self.interrupt_event.is_set():
+                            # Break out of the synthesis loop
+                            break 
+                        
+                        audio_np = np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16)
+                        stream.write(audio_np)
+                # The 'with' statement guarantees stream.stop() and stream.close() are called.
+                # --- END FIX ---
 
                 consecutive_errors = 0
 
@@ -253,14 +254,11 @@ class VoiceAssistant:
                     self.tts_stop_event.set()
                     break
             finally:
-                if stream:
-                    stream.stop()
-                    stream.close()
-                
                 if text is not None:
                     self.tts_queue.task_done()
                 
                 # If the queue is empty and no interrupt is set, the speech has finished naturally.
+                # This check must run *after* the stream has closed.
                 if self.tts_queue.empty() and not self.interrupt_event.is_set():
                     self.is_speaking_event.clear()
 
@@ -414,7 +412,8 @@ class VoiceAssistant:
 
         if not frames: return None
         audio_data: bytes = b''.join(frames)
-        audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_NORMALIZATION
+        # UPDATED: Use INT16_MAX
+        audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_MAX
         return audio_np
 
     @contextmanager
