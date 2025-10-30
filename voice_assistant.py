@@ -730,7 +730,7 @@ class VoiceAssistant:
             except Exception as e:
                 logging.warning(f"Error releasing Whisper model: {e}")
 
-        # --- IMPROVEMENT: Consolidated TTS thread cleanup ---
+        # --- CRITICAL FIX: Consolidated and completed TTS thread cleanup ---
         if hasattr(self, 'tts_thread'):
             self.tts_stop_event.set()
             
@@ -739,5 +739,6 @@ class VoiceAssistant:
             
             if self.tts_thread.is_alive():
                 self.tts_thread.join(timeout=1.0)
-                if self.tts_thread.is_alive():  # <--- Completing the check
+                if self.tts_thread.is_alive(): # <-- Completed line
                     logging.warning("TTS thread did not shut down cleanly.")
+        # --- END CRITICAL FIX ---
