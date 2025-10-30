@@ -29,10 +29,10 @@ Configurable: Settings adjustable via config.ini and command-line arguments.
 ## 🔩 1. Prerequisites
 Before you begin, ensure you have the following installed and running:
 
-A. Ollama
+### A. Ollama
 You must have the Ollama application installed and running.
 
-B. Pull an Ollama Model
+### B. Pull an Ollama Model
 You need at least one model downloaded for Ollama to use.
 
 ```Bash
@@ -43,12 +43,14 @@ ollama pull phi3:mini
 # Or, use another model
 ollama pull mistral
 ```
-C. System Dependencies
+### C. System Dependencies
 The sounddevice library requires portaudio. pyttsx3 often requires espeak. faster-whisper may require ffmpeg for audio handling.
 
-On macOS (via Homebrew):
+On Fedora/RHEL Linux:
+_Note: The portaudio-devel and espeak packages are in standard repositories, but ffmpeg requires enabling the RPM Fusion repository._
 ```Bash
-brew install portaudio ffmpeg espeak
+# Enable RPM Fusion (if not already done) - see https://rpmfusion.org/Configuration
+sudo dnf install portaudio-devel gcc python3-devel ffmpeg espeak pulseaudio-libs-devel
 ```
 
 On Debian/Ubuntu Linux:
@@ -56,12 +58,9 @@ On Debian/Ubuntu Linux:
 sudo apt-get update && sudo apt-get install portaudio19-dev ffmpeg espeak
 ```
 
-On Fedora/RHEL Linux:
-_Note: The portaudio-devel and espeak packages are in standard repositories, but ffmpeg requires enabling the RPM Fusion repository._
-
+On macOS (via Homebrew):
 ```Bash
-# Enable RPM Fusion (if not already done) - see https://rpmfusion.org/Configuration
-sudo dnf install portaudio-devel gcc python3-devel ffmpeg espeak pulseaudio-libs-devel
+brew install portaudio ffmpeg espeak
 ```
 
 ## 🔧 2. Installation
@@ -73,13 +72,12 @@ cd ollama-STT-TTS
 ```
 
 (Recommended) Create a Python virtual environment:
-
 ```Bash
 python3 -m venv venv
 source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 ```
-Install the required Python libraries using the requirements.txt file:
 
+Install the required Python libraries using the requirements.txt file:
 ```Bash
 pip install -r requirements.txt
 ```
@@ -117,7 +115,6 @@ Run the container (macOS/Windows): Audio device mapping on macOS and Windows is 
 
 ### 🐍 B. Run Locally with Python
 Run the main script: Make sure your Ollama application is running in the background.
-
 ```Bash
 python assistant.py
 ```
@@ -125,13 +122,12 @@ python assistant.py
 On the first run, the script will automatically download the faster-whisper (tiny.en by default) and openwakeword (hey_glados.onnx by default) models.
 
 List devices (Optional): You can list available audio input devices and TTS voices using:
-
 ```Bash
 python assistant.py --list-devices
 python assistant.py --list-voices
 ```
 
-Use the index or ID provided by these commands with the --device-index and --tts-voice-id arguments, or set them in config.ini.
+Use the index or ID provided by these commands with the ``--device-index`` and ``--tts-voice-id`` arguments, or set them in ``config.ini``.
 
 Interact: When ready, you will see the message: Ready! Listening for 'hey glados'....
 
@@ -149,13 +145,11 @@ Note: Special voice commands like "goodbye" or "exit" will stop the script, and 
 You can customize the assistant's behavior using command-line arguments or by editing the ``config.ini`` file. Command-line arguments override settings in ``config.ini`.
 
 Run with defaults (loaded from ``config.ini``):
-
 ```Bash
 python assistant.py
 ```
 
 Example: Run with different settings:
-
 ```Bash
 python assistant.py --wakeword-threshold 0.5 --vad-aggressiveness 1 --ollama-model llama3 --device-index 2
 ```
