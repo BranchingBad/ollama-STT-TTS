@@ -12,7 +12,7 @@ import logging
 import sys
 import os
 import ollama
-from typing import Any, Tuple, Optional, Literal
+from typing import Any, Tuple, Optional, Literal # Literal imported but only used for type checking clarity
 
 # Import defaults and helpers from audio_utils
 try:
@@ -55,7 +55,9 @@ def device_index_type(value: str) -> Optional[int]:
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid device index: '{value}'. Must be an integer or 'none'.")
 
-def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser, Literal[True, False]]:
+# --- IMPROVEMENT: Changed return type hint from Literal[True, False] to bool ---
+def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser, bool]:
+# --- END IMPROVEMENT ---
     """
     Loads settings from config.ini, parses command-line arguments,
     and sets up logging.
