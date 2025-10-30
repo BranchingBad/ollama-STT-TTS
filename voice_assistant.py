@@ -261,6 +261,7 @@ class VoiceAssistant:
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
         self.is_speaking_event.clear()
+        self.is_processing_command.clear()
 
     def _audio_monitor_worker(self) -> None:
         """Monitors stream_buffer for barge-in during LLM/TTS."""
