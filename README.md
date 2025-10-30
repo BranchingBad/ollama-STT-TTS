@@ -118,13 +118,15 @@ python assistant.py
 
 On the first run, the script will automatically download the faster-whisper (tiny.en by default) and openwakeword (hey_glados.onnx by default) models.
 
-List devices (Optional): You can list available audio input devices and TTS voices using:
+List devices (Optional): To find the index for your microphone or speaker, use these commands:
 ```Bash
+# Lists available audio input devices (microphones)
 python assistant.py --list-devices
-python assistant.py --list-voices
+# Lists available audio output devices (speakers for TTS)
+python assistant.py --list-output-devices
 ```
 
-Use the index or ID provided by these commands with the ``--device-index`` and ``--tts-voice-id`` arguments, or set them in ``config.ini``.
+Use the index provided by these commands with the ``device_index`` and ``piper_output_device_index`` arguments in ``config.ini``.
 
 Interact: When ready, you will see the message: Ready! Listening for 'hey glados'....
 
