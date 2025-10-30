@@ -10,10 +10,15 @@ Loads configuration, initializes, and runs the VoiceAssistant class.
 import logging
 import sys
 
-# Import components from other files
-# Note: Removed 'setup_logging' from imports, as it is now defined locally.
-from config_manager import load_config_and_args, get_ollama_client
-from voice_assistant import VoiceAssistant
+# --- IMPROVEMENT: Top-Level Dependency Check ---
+# Encapsulate critical imports to provide clear error messages if dependencies are missing.
+try:
+    from config_manager import load_config_and_args, get_ollama_client
+    from voice_assistant import VoiceAssistant
+except ImportError as e:
+    print(f"FATAL: Missing required Python module: {e.name}. Please ensure all dependencies are installed (e.g., via pip install -r requirements.txt).", file=sys.stderr)
+    sys.exit(1)
+# --- END IMPROVEMENT ---
 
 def setup_logging():
     """Configures the logging format and level."""
@@ -29,34 +34,28 @@ def setup_logging():
 def main() -> None:
     """The entry point for the assistant application."""
     
-    # --- FIX 1: Initialize logging first to catch all subsequent errors ---
+    # Initialize logging first to catch all subsequent errors
     try:
         setup_logging()
     except Exception as e:
         # A simple print if setup_logging fails entirely
         print(f"FATAL: Could not set up logging: {e}", file=sys.stderr)
         sys.exit(1)
-    # --- END FIX 1 ---
 
     assistant: VoiceAssistant | None = None
     try:
-        # load_config_and_args now returns an additional flag
         args, _, should_exit = load_config_and_args()
         
-        # --- NEW LOGIC: Handle device listing exit flag ---
+        # Handle device listing exit flag
         if should_exit:
             # config_manager has already printed the device list.
-            # Exit cleanly without running the rest of the assistant initialization.
             sys.exit(0)
-        # --- END NEW LOGIC ---
 
         # Get the Ollama client *once* and pass it to the assistant.
         ollama_client = get_ollama_client(args.ollama_host)
         
-        # --- IMPROVEMENT: Simplify the warning check ---
         if ollama_client is None:
             logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
-        # --- END IMPROVEMENT ---
 
         assistant = VoiceAssistant(args, ollama_client)
         
