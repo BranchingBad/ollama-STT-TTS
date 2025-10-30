@@ -233,11 +233,10 @@ class VoiceAssistant:
                     if self.interrupt_event.is_set():
                         break
                     
-                    # --- CRITICAL BUG FIX ---
-                    # audio_chunk is raw bytes from piper. It needs to be
-                    # converted to a numpy array for sounddevice.
-                    # The previous '.tobytes()' was incorrect as audio_chunk is already bytes.
-                    audio_np = np.frombuffer(audio_chunk, dtype=np.int16)
+                    # --- CRITICAL BUG FIX (Restored) ---
+                    # audio_chunk is an AudioChunk object. We must call .tobytes()
+                    # to get the raw bytes for numpy.
+                    audio_np = np.frombuffer(audio_chunk.tobytes(), dtype=np.int16)
                     # --- END FIX ---
                     
                     stream.write(audio_np)
@@ -292,7 +291,11 @@ class VoiceAssistant:
         logging.info(log_message)
         self.interrupt_event.set()
         
-        sd.stop() # Ensure any ongoing sounddevice playback is stopped
+        # --- DEADLOCK BUG FIX ---
+        # sd.stop() # <--- REMOVED: This global stop was causing a deadlock
+        # with the audio callback thread. The TTS worker will stop its
+        # own stream cleanly when it sees the interrupt_event.
+        # --- END FIX ---
 
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
@@ -581,7 +584,7 @@ class VoiceAssistant:
                 self.wait_for_speech()
                 return True
             if "new chat" in user_prompt or "reset chat" in user_prompt:
-                self.reset_history()
+                self.reset_.history()
                 self.speak("Starting a new conversation.")
                 self.wait_for_speech()
                 return False
@@ -711,7 +714,8 @@ class VoiceAssistant:
         if hasattr(self, 'tts_stop_event'):
             self.tts_stop_event.set()
             
-            sd.stop() # Stop any final playback
+            # We no longer call the global sd.stop() here
+            # to prevent deadlocks.
 
             if hasattr(self, 'tts_queue'):
                 self.tts_queue.put(None) # Send shutdown signal
