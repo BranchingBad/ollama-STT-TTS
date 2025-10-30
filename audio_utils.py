@@ -11,16 +11,15 @@ CHUNK_SIZE: int = int(RATE * CHUNK_DURATION_MS / 1000) # 480 frames
 INT16_NORMALIZATION: float = 32768.0 # Normalization factor for int16
 SENTENCE_END_PUNCTUATION: list[str] = ['.', '?', '!', '\n']
 MAX_TTS_ERRORS: int = 5
-DEFAULT_OLLAMA_HOST: str = 'http://localhost:11434'
 MAX_HISTORY_MESSAGES: int = 20
-STREAM_READ_TIMEOUT: float = 0.05 
 
 # --- 2. Centralized Configuration Defaults ---
 DEFAULT_SETTINGS: dict[str, Any] = {
-    'ollama_model': 'llama3',
+    # --- IMPROVEMENT 3: Aligned with config.ini ---
+    'ollama_model': 'phi3:mini',
     'whisper_model': 'tiny.en',
     'wakeword_model_path': 'hey_glados.onnx',
-    'ollama_host': DEFAULT_OLLAMA_HOST,
+    'ollama_host': 'http://localhost:11434',
     'wakeword': 'hey glados',
     'wakeword_threshold': 0.45, 
     'vad_aggressiveness': 2,   
@@ -34,7 +33,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'max_words_per_command': 60, 
     'whisper_device': 'cpu',
     'whisper_compute_type': 'int8',
-    'max_history_tokens': 4096,
+    'max_history_tokens': 2048,
 }
 
 # --- 3. Audio Helpers (Updated for sounddevice) ---

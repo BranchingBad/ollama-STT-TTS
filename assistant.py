@@ -11,7 +11,7 @@ import logging
 import sys
 
 # Import components from other files
-from config_manager import load_config_and_args, check_ollama_connectivity
+from config_manager import load_config_and_args, get_ollama_client
 from voice_assistant import VoiceAssistant
 
 def main() -> None:
@@ -20,13 +20,20 @@ def main() -> None:
     try:
         args, _ = load_config_and_args()
         
-        # Run connectivity check *before* initializing the full class
-        if not check_ollama_connectivity(args.ollama_host):
+        # --- IMPROVEMENT ---
+        # Get the client *once* and pass it to the assistant.
+        # This avoids redundant client creation and allows the assistant
+        # to gracefully handle a None client if connection fails.
+        ollama_client = get_ollama_client(args.ollama_host)
+        
+        if ollama_client is None:
             logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
             # We still allow it to run, in case the user wants to fix Ollama
-            # while the script is live. The class will handle the disconnected state.
+            # while the script is live. The class will handle the 'None' client.
 
-        assistant = VoiceAssistant(args)
+        assistant = VoiceAssistant(args, ollama_client)
+        # --- END IMPROVEMENT ---
+        
         assistant.run()
 
     except IOError as e:

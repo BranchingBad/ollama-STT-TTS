@@ -12,14 +12,13 @@ import logging
 import sys
 import os
 import ollama
-# import pyaudio # No longer needed
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional
 
 # Import defaults and helpers from audio_utils
 try:
     from audio_utils import (
         DEFAULT_SETTINGS, 
-        list_audio_devices, # Updated import
+        list_audio_devices,
         list_tts_voices
     )
 except ImportError:
@@ -39,24 +38,22 @@ def setup_logging() -> None:
     logging.getLogger("pyttsx3").setLevel(logging.WARNING)
     logging.getLogger("openwakeword").setLevel(logging.WARNING)
     logging.getLogger("webrtcvad").setLevel(logging.WARNING)
-    # logging.getLogger("pyaudio").setLevel(logging.WARNING) # No longer needed
 
-def check_ollama_connectivity(ollama_host: str) -> bool:
-    """Checks if the Ollama server is reachable."""
-    logging.info(f"Checking Ollama connection at {ollama_host}...")
-    if ollama_host == DEFAULT_SETTINGS['ollama_host'] and DEFAULT_SETTINGS['ollama_host'] not in ollama_host:
-         logging.info(f"Using default Ollama host: {DEFAULT_SETTINGS['ollama_host']}")
-         ollama_host = DEFAULT_SETTINGS['ollama_host']
-
+def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
+    """
+    Tries to connect to the Ollama server and returns a client instance.
+    Returns None if the connection fails.
+    """
+    logging.info(f"Attempting to connect to Ollama at {ollama_host}...")
     try:
         client = ollama.Client(host=ollama_host)
         client.list() 
-        logging.info("Ollama server is reachable.")
-        return True
+        logging.info("Ollama server connection successful.")
+        return client
     except Exception as e:
         logging.error(f"Failed to connect to Ollama at {ollama_host}: {e}")
         logging.error("Please ensure Ollama is running and the 'ollama_host' in config.ini is correct.")
-        return False
+        return None
 
 def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser]:
     """
@@ -107,7 +104,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--silence-seconds', type=float, default=DEFAULT_SETTINGS['silence_seconds'], help="Seconds of silence to detect end of speech.")
     func_group.add_argument('--listen-timeout', type=float, default=DEFAULT_SETTINGS['listen_timeout'], help="Seconds to wait for speech before timing out.")
     func_group.add_argument('--pre-buffer-ms', type=int, default=DEFAULT_SETTINGS['pre_buffer_ms'], help="Milliseconds of audio to keep before speech starts.")
-    func_group.add_argument('--system-prompt', type=str, default=DEFAULT_SETTINGS['system_prompt'], help="The system prompt for the assistant.")
+    func_group.add_argument('--system-prompt', type=str, default=DEFAULT_SETTINGS['system_prompt'], help="The system prompt for the assistant (or a path to a .txt file).")
     func_group.add_argument('--device-index', type=lambda x: int(x) if x.lower() != 'none' else None, default=DEFAULT_SETTINGS['device_index'], help="Index of the audio input device (use --list-devices).")
     func_group.add_argument('--tts-voice-id', type=str, default=DEFAULT_SETTINGS['tts_voice_id'], help="ID or name of the pyttsx3 voice (use --list-voices).")
     func_group.add_argument('--tts-volume', type=float, default=DEFAULT_SETTINGS['tts_volume'], help="TTS volume (0.0 to 1.0).")
@@ -147,11 +144,21 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         logging.getLogger().setLevel(logging.DEBUG)
         logging.debug("DEBUG logging enabled.")
 
-    # --- UPDATED SECTION ---
+    # --- NEW IMPROVEMENT ---
+    # Check if system_prompt is a file path
+    if args.system_prompt and os.path.isfile(args.system_prompt):
+        logging.info(f"Loading system prompt from file: {args.system_prompt}")
+        try:
+            with open(args.system_prompt, 'r', encoding='utf-8') as f:
+                args.system_prompt = f.read().strip()
+        except Exception as e:
+            logging.error(f"Failed to read system prompt file '{args.system_prompt}': {e}")
+            logging.warning("Using the file path as a literal string for the prompt.")
+    # --- END IMPROVEMENT ---
+
     if args.list_devices or args.list_voices:
         if args.list_devices:
             try:
-                # No p_audio object needed, sounddevice is module-level
                 list_audio_devices() 
             except Exception as e:
                 logging.error(f"Could not list audio devices: {e}")
@@ -162,6 +169,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
             except Exception as e:
                 logging.error(f"Could not list TTS voices: {e}")
         
-        sys.exit(0) # Exit after listing
+        sys.exit(0)
 
     return args, config

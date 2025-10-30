@@ -19,11 +19,12 @@ import threading
 import queue
 import time
 from openwakeword.model import Model
-from typing import Any
+from typing import Any, Optional
 import numpy.typing as npt
 import sys
 from contextlib import contextmanager
 import os
+import gc  # <-- Moved from cleanup()
 
 # Import external modules
 from audio_utils import (
@@ -44,18 +45,23 @@ class VoiceAssistant:
     Manages all components of the voice assistant.
     """
 
-    def __init__(self, args: argparse.Namespace) -> None:
+    # --- IMPROVEMENT: Accepting the client via dependency injection ---
+    def __init__(self, args: argparse.Namespace, client: Optional[ollama.Client]) -> None:
         """
         Initializes the assistant, loads models, and sets up audio.
         """
         self.args: argparse.Namespace = args
         self.system_prompt: str = args.system_prompt
         self.max_history_tokens: int = args.max_history_tokens
-        self.ollama_client = ollama.Client(host=args.ollama_host)
+        
+        # Store the passed-in client (could be None)
+        self.ollama_client: Optional[ollama.Client] = client
         
         # Audio stream control (single buffer, filled by sounddevice callback)
         self.stream_buffer: queue.Queue[bytes] = queue.Queue(maxsize=100)
-        # self.stream_stop_event = threading.Event() # No longer needed
+        
+        # Added for throttled audio drop warnings
+        self.last_buffer_drop_warning: float = 0.0 
 
         # Calculate derived audio settings
         CHUNK_DURATION_MS: int = 30 
@@ -72,8 +78,11 @@ class VoiceAssistant:
             base_filename = os.path.basename(args.wakeword_model_path)
             self.wakeword_model_key: str = base_filename.split('.')[0] 
             if self.wakeword_model_key not in self.oww_model.models:
-                 logging.warning(f"Default key '{self.wakeword_model_key}' not found. Using first available: {list(self.oww_model.models.keys())[0] if self.oww_model.models else args.wakeword}")
-                 self.wakeword_model_key: str = list(self.oww_model.models.keys())[0] if self.oww_model.models else args.wakeword
+                 available_keys = list(self.oww_model.models.keys())
+                 if not available_keys:
+                     raise ValueError("Openwakeword model loaded but contains no keys.")
+                 self.wakeword_model_key = available_keys[0]
+                 logging.warning(f"Default key '{base_filename.split('.')[0]}' not found. Using first available: '{self.wakeword_model_key}'")
             logging.info(f"Loaded wakeword model with key: '{self.wakeword_model_key}'")
         except Exception as e:
             logging.critical(f"Error loading openwakeword model '{args.wakeword_model_path}': {e}")
@@ -135,7 +144,6 @@ class VoiceAssistant:
         self.vad = webrtcvad.Vad(args.vad_aggressiveness)
 
         # PyAudio -> sounddevice
-        # self.audio = pyaudio.PyAudio() # No longer needed
         self.stream: sd.InputStream | None = None
         
         # Audio Device Setup (Updated for sounddevice)
@@ -158,6 +166,9 @@ class VoiceAssistant:
 
         self.messages: list[dict[str, str]] = []
         self.reset_history()
+        
+        # Stores the token count from the *last* completed response
+        self.last_known_token_count: int = 0
 
 
     def find_default_input_device(self) -> int | None:
@@ -180,6 +191,7 @@ class VoiceAssistant:
 
     def reset_history(self) -> None:
         self.messages = [{'role': 'system', 'content': self.system_prompt}]
+        self.last_known_token_count = 0  # Reset token count
         logging.debug("Conversation history reset.")
 
     def _tts_worker(self) -> None:
@@ -261,7 +273,6 @@ class VoiceAssistant:
                 self.stream_buffer.task_done()
         logging.debug("Audio monitor stopped.")
 
-    # --- THIS FUNCTION REPLACES THE _audio_reader_worker THREAD ---
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info: Any, status: sd.CallbackFlags) -> None:
         """
         sounddevice stream callback.
@@ -271,10 +282,12 @@ class VoiceAssistant:
         if status:
             logging.warning(f"Audio stream callback status: {status}")
         try:
-            # indata is np.ndarray(dtype='int16'), convert to bytes
             self.stream_buffer.put_nowait(indata.tobytes())
         except queue.Full:
-            logging.debug("Dropped audio chunk (callback) due to full buffer.")
+            now = time.time()
+            if now - self.last_buffer_drop_warning > 5.0: # Only warn every 5s
+                logging.warning("Audio buffer is full, dropping audio chunks! (Callback is faster than consumer)")
+                self.last_buffer_drop_warning = now
 
     def transcribe_audio(self, audio_np: npt.NDArray[np.float32]) -> str:
         try:
@@ -362,55 +375,32 @@ class VoiceAssistant:
         return any(p in token for p in SENTENCE_END_PUNCTUATION)
 
     def _manage_history(self) -> None:
+        """
+        Prunes conversation history based on the token count from the *last*
+        response, avoiding a 'dry run' API call for performance.
+        """
         if not self.messages or self.messages[0]['role'] != 'system':
              logging.error("History corrupted, resetting.")
-             self.messages = [{'role': 'system', 'content': self.system_prompt}]
+             self.reset_history()
              return
-        if len(self.messages) <= 1: return
-        current_token_count = 0
-        try:
-             chat_response = self.ollama_client.chat(
-                 model=self.args.ollama_model, 
-                 messages=self.messages,
-                 stream=False,
-                 options={'num_predict': 0}
-             )
-             current_token_count: int = chat_response.get('prompt_eval_count', 0)
-             logging.debug(f"Current history token count: {current_token_count}")
-        except Exception as e:
-             logging.error(f"Ollama token count failed: {e}. Falling back to turn-based pruning.")
-             self._manage_history_turn_fallback()
-             return
-
-        while current_token_count > self.max_history_tokens and len(self.messages) > 3:
+        
+        if self.last_known_token_count == 0 and len(self.messages) > 1:
+            logging.warning("Last token count unknown, using turn-based fallback.")
+            self._manage_history_turn_fallback()
+            return
+            
+        if self.last_known_token_count > self.max_history_tokens and len(self.messages) > 3:
             if self.messages[1]['role'] == 'user' and self.messages[2]['role'] == 'assistant':
                 del self.messages[1:3]
-                try:
-                    recount_response = self.ollama_client.chat(
-                        model=self.args.ollama_model, 
-                        messages=self.messages,
-                        stream=False,
-                        options={'num_predict': 0}
-                    )
-                    new_token_count: int = recount_response.get('prompt_eval_count', 0)
-                    tokens_removed = current_token_count - new_token_count
-                    logging.warning(f"History pruned: Removed {tokens_removed} tokens. New size: {new_token_count} tokens.")
-                    current_token_count = new_token_count
-                except Exception as e:
-                    logging.error(f"Failed to recount tokens after pruning: {e}.")
-                    self._manage_history_turn_fallback()
-                    break
+                logging.warning(f"History context ({self.last_known_token_count} tokens) exceeded limit ({self.max_history_tokens}). Pruning one exchange.")
+                self.last_known_token_count = 0 
             else:
-                logging.error("History structure mismatch. Stopping token-based pruning.")
-                break
+                logging.error("History structure mismatch. Cannot prune tokens.")
+        elif self.last_known_token_count > 0:
+            logging.debug(f"History token count OK: {self.last_known_token_count}")
         
-        if current_token_count > self.max_history_tokens and len(self.messages) > 3:
-            logging.critical(f"History ({current_token_count} tokens) exceeds limit. LLM call may fail.")
-            if len(self.messages) >= 3 and self.messages[1]['role'] == 'user' and self.messages[2]['role'] == 'assistant':
-                 del self.messages[1:3]
-                 logging.warning("Aggressively removed one more pair.")
-
     def _manage_history_turn_fallback(self) -> None:
+        """Fallback pruning method based on message count."""
         current_context_length = len(self.messages) - 1 
         current_turns = current_context_length // 2
         if current_turns > MAX_HISTORY_MESSAGES:
@@ -434,17 +424,34 @@ class VoiceAssistant:
             elif self.messages:
                  logging.error(f"Failed to rollback user message.")
 
+    # --- IMPROVEMENT: This function is now fully robust ---
     def get_ollama_response_stream(self, user_text: str) -> None:
         self.is_processing_command.set()
-        self.messages.append({'role': 'user', 'content': user_text})
-        self._manage_history()
+        
+        # This 'finally' block now wraps the *entire* function body,
+        # ensuring 'is_processing_command' is *always* cleared,
+        # preventing a potential application freeze.
         full_response = ""
-        sentence_buffer = ""
-        monitor_thread = threading.Thread(target=self._audio_monitor_worker, daemon=True)
-        monitor_thread.start()
-        response_stream: Any = None
-
+        final_chunk: dict[str, Any] = {}
+        monitor_thread: threading.Thread | None = None
+        
         try:
+            # --- Guard clause for disconnected state ---
+            if self.ollama_client is None:
+                logging.error("Ollama client not available. Cannot get response.")
+                self.speak("I'm sorry, I'm not connected to my brain. Please check the Ollama server.")
+                # We return, and the 'finally' block will safely clear the event
+                return 
+
+            self.messages.append({'role': 'user', 'content': user_text})
+            self._manage_history() 
+            
+            sentence_buffer = ""
+            
+            monitor_thread = threading.Thread(target=self._audio_monitor_worker, daemon=True)
+            monitor_thread.start()
+            response_stream: Any = None
+
             response_stream = self.ollama_client.chat(
                 model=self.args.ollama_model, messages=self.messages, stream=True
             )
@@ -452,24 +459,39 @@ class VoiceAssistant:
                 for chunk in stream:
                     if self.interrupt_event.is_set():
                         self.stop_generation("LLM stream stopped by user.")
-                        break 
+                        break
+                    
+                    if chunk.get('done', False):
+                        final_chunk = chunk
+                    
                     token = chunk.get('message', {}).get('content', '')
                     if not token: continue
+                    
                     full_response += token
                     sentence_buffer += token
                     if self._is_sentence_end(token):
                         self.speak(sentence_buffer.strip())
                         sentence_buffer = ""
+                        
             if sentence_buffer.strip() and not self.interrupt_event.is_set():
                 self.speak(sentence_buffer.strip())
+                
         except Exception as e:
             logging.error(f"Error during Ollama streaming: {e}", exc_info=True)
             self.speak("I'm sorry, I encountered an error.")
-            full_response = ""
+            full_response = "" # Ensure we don't save a partial error response
         finally:
             self.is_processing_command.clear() 
-            if monitor_thread.is_alive(): monitor_thread.join(timeout=0.2)
+            if monitor_thread and monitor_thread.is_alive():
+                monitor_thread.join(timeout=0.2)
+            
             self._update_history(user_text, full_response)
+            if final_chunk:
+                self.last_known_token_count = final_chunk.get('prompt_eval_count', 0)
+                logging.debug(f"Updated history. New prompt token count: {self.last_known_token_count}")
+            elif not full_response:
+                self.last_known_token_count = 0 
+                
 
     def process_user_command(self) -> bool:
         """Returns True if the assistant should exit."""
@@ -484,6 +506,12 @@ class VoiceAssistant:
                 self.wait_for_speech()
             return False
 
+        # --- IMPROVEMENT 1: Give feedback *before* transcription ---
+        self.speak("Thinking...")
+        # We don't wait, so transcription can happen in parallel
+        # with the "Thinking..." audio starting.
+        # ---
+        
         logging.info("Transcribing audio...")
         user_text: str = self.transcribe_audio(audio_data)
         if not user_text:
@@ -512,8 +540,9 @@ class VoiceAssistant:
             self.wait_for_speech()
             return False
 
-        self.speak("Thinking...")
-        self.wait_for_speech()
+        # --- This call is now redundant thanks to IMPROVEMENT 1 ---
+        # self.speak("Thinking...") 
+        
         logging.info(f"Sending to {self.args.ollama_model}...")
         self.get_ollama_response_stream(user_text)
         self.wait_for_speech() 
@@ -527,7 +556,6 @@ class VoiceAssistant:
             return
 
         try:
-            # --- sounddevice Stream Initialization ---
             self.stream = sd.InputStream(
                 samplerate=RATE,
                 blocksize=CHUNK_SIZE,
@@ -538,7 +566,6 @@ class VoiceAssistant:
             )
             self.stream.start()
             logging.debug("sounddevice audio stream started.")
-            # --- End Stream Initialization ---
 
         except Exception as e:
             logging.critical(f"FATAL: Failed to open audio stream: {e}")
@@ -591,7 +618,6 @@ class VoiceAssistant:
         """Cleans up resources (Updated for sounddevice)."""
         logging.info("Cleaning up resources...")
         
-        # Stop sounddevice stream
         if self.stream:
             try:
                 self.stream.stop()
@@ -602,13 +628,12 @@ class VoiceAssistant:
             finally:
                 self.stream = None
         
-        # Release Whisper model
         if hasattr(self, 'whisper_model'):
             try:
                 if self.whisper_device == 'cuda' and TORCH_AVAILABLE and torch.cuda.is_available():
                     logging.info("Releasing CUDA memory...")
                     del self.whisper_model 
-                    import gc; gc.collect() 
+                    gc.collect() # <-- gc was imported at top
                     torch.cuda.empty_cache()
                 else:
                     del self.whisper_model
@@ -618,12 +643,24 @@ class VoiceAssistant:
             finally:
                  if 'whisper_model' in self.__dict__: del self.whisper_model
 
-        # Stop TTS thread
+        # --- IMPROVEMENT 2: More graceful TTS shutdown ---
         if hasattr(self, 'tts_stop_event'):
             self.tts_stop_event.set()
-            if hasattr(self, 'tts_queue'): self.tts_queue.put(None) 
+            
+            # Call stop() *before* joining to interrupt runAndWait()
+            if hasattr(self, 'tts_engine'):
+                self.tts_engine.stop() 
+                
+            # Unblock the queue.get() in the worker
+            if hasattr(self, 'tts_queue'): 
+                self.tts_queue.put(None) 
+            
+            # Now, join the thread
             if hasattr(self, 'tts_thread') and self.tts_thread.is_alive():
                 self.tts_thread.join(timeout=1.0)
-        if hasattr(self, 'tts_engine'): self.tts_engine.stop()
-
-        # self.audio.terminate() # No longer needed
+                if self.tts_thread.is_alive():
+                    logging.warning("TTS thread did not shut down cleanly.")
+        
+        # Original stop call is now redundant but harmless
+        if hasattr(self, 'tts_engine'): 
+            self.tts_engine.stop()
