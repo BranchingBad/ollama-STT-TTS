@@ -40,10 +40,9 @@ You need at least one model downloaded for Ollama to use.
 ollama pull llama3
 ```
 ### ⚙️ C. System Dependencies
-The sounddevice library requires portaudio. pyttsx3 often requires espeak. faster-whisper may require ffmpeg for audio handling.
+The sounddevice library requires portaudio. faster-whisper may require ffmpeg for audio handling.
 
 On Fedora/RHEL Linux:
-_Note: The portaudio-devel and espeak packages are in standard repositories, but ffmpeg requires enabling the RPM Fusion repository._
 ```Bash
 # Enable RPM Fusion (if not already done) - see https://rpmfusion.org/Configuration
 sudo dnf install portaudio-devel gcc python3-devel ffmpeg espeak pulseaudio-libs-devel
@@ -56,10 +55,10 @@ sudo apt-get update && sudo apt-get install portaudio19-dev ffmpeg
 
 On macOS (via Homebrew):
 ```Bash
-brew install portaudio ffmpeg espeak
+brew install portaudio ffmpeg
 ```
 ### 🗣️ D. Piper TTS Model
-The assistant requires the Piper ONNX model and its corresponding JSON config file. By default, these files must be in the models/ directory, matching the paths specified in ``config.ini``.
+The assistant requires the Piper ONNX model and its corresponding JSON config file. By default, these files must be in the ``models/`` directory, matching the paths specified in ``config.ini``.
 
 ## 🔧 2. Installation
 Clone this repository to your local machine:
