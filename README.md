@@ -131,7 +131,7 @@ Use the index or ID provided by these commands with the ``--device-index`` and `
 
 Interact: When ready, you will see the message: Ready! Listening for 'hey glados'....
 
-Say the wakeword (e.g., "Hey glados").
+Say the wakeword (e.g., "``Hey glados``").
 
 The assistant will respond "Yes?" and begin listening.
 
@@ -139,10 +139,10 @@ Speak your prompt (e.g., "Who won the war of 1812?").
 
 The script will transcribe your audio, send it to Ollama, and speak the response. It will then return to listening for the wakeword.
 
-Note: Special voice commands like "goodbye" or "exit" will stop the script, and "new chat" or "reset chat" will clear the conversation history.
+_Note: Special voice commands like "``goodbye``" or "``exit``" will stop the script, and "``new chat``" or "``reset chat``" will clear the conversation history._
 
 ## 🎛️ 4. Configuration
-You can customize the assistant's behavior using command-line arguments or by editing the ``config.ini`` file. Command-line arguments override settings in ``config.ini`.
+You can customize the assistant's behavior using command-line arguments or by editing the ``config.ini`` file. Command-line arguments override settings in ``config.ini``.
 
 Run with defaults (loaded from ``config.ini``):
 ```Bash
