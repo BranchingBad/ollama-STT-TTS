@@ -13,7 +13,7 @@ flowchart LR
     D -- "Transcribes audio" --> E[Ollama LLM];
     E -- "Generates response" --> F[pyttsx3 TTS];
     F -- "Speaks response" --> G[Speaker];
-    
+
 💡 Features
 100% Local: No cloud services are required for STT, TTS, or the LLM.
 
@@ -85,17 +85,46 @@ Install the required Python libraries using the requirements.txt file:
 Bash
 
 pip install -r requirements.txt
-⌨️ 3. Usage
-Make sure your Ollama application is running in the background.
 
-Run the main script (assistant.py):
+⌨️ 3. Usage
+You can run the assistant either via Docker or directly with Python.
+
+A. Run with Docker (Recommended)
+A Docker image is automatically built and published to the GitHub Container Registry (ghcr) via a GitHub Action.
+
+Pull the latest image:
+
+Bash
+
+docker pull ghcr.io/branchingbad/ollama-stt-tts:latest
+Prepare your config.ini: Copy the config.ini file from this repository to your host machine. You will likely need to edit it to set your device_index. You can find the correct index by running python assistant.py --list-devices from a local (non-Docker) installation, or by checking your system's audio settings.
+
+Run the container (Linux): The following command runs the container, connects it to your host's network (to access Ollama), mounts your host's audio devices, and mounts your local config.ini.
+
+Bash
+
+docker run --rm -it \
+  --network=host \
+  --device /dev/snd \
+  -v ./config.ini:/app/config.ini:ro \
+  ghcr.io/branchingbad/ollama-stt-tts:latest
+--network=host: Required for the container to access your Ollama server at http://localhost:11434.
+
+--device /dev/snd: Grants the container access to your host's sound devices (this is Linux-specific).
+
+-v ./config.ini:/app/config.ini:ro: Mounts your local configuration file as read-only into the container's /app directory.
+
+Run the container (macOS/Windows): Audio device mapping on macOS and Windows is more complex. You may need to adjust the docker run command to correctly share your microphone and audio output. If --network=host is not available, remove it and set ollama_host in your config.ini to http://host.docker.internal:11434.
+
+B. Run Locally with Python
+Run the main script: Make sure your Ollama application is running in the background.
 
 Bash
 
 python assistant.py
-On the first run, the script will automatically download the faster-whisper (tiny.en by default) and openwakeword models (hey_glados.onnx by default).
+On the first run, the script will automatically download the faster-whisper (tiny.en by default) and openwakeword (hey_glados.onnx by default) models.
 
-You can list available audio input devices and TTS voices using:
+List devices (Optional): You can list available audio input devices and TTS voices using:
 
 Bash
 
@@ -103,19 +132,17 @@ python assistant.py --list-devices
 python assistant.py --list-voices
 Use the index or ID provided by these commands with the --device-index and --tts-voice-id arguments, or set them in config.ini.
 
-When ready, you will see the message: Ready! Listening for 'hey glados'... (or your configured wakeword).
+Interact: When ready, you will see the message: Ready! Listening for 'hey glados'....
 
 Say the wakeword (e.g., "Hey glados").
 
-The assistant will respond "Yes?" and begin listening for your command.
+The assistant will respond "Yes?" and begin listening.
 
-Speak your prompt (e.g., "Who won the war of 1812?"). The script will listen until you stop talking based on the silence detection settings.
+Speak your prompt (e.g., "Who won the war of 1812?").
 
-The script will transcribe your audio, send it to Ollama, and speak the response back to you. It will then automatically return to listening for the wakeword.
+The script will transcribe your audio, send it to Ollama, and speak the response. It will then return to listening for the wakeword.
 
-Note: When running Whisper on a CPU, you may see a warning like UserWarning: FP16 is not supported on CPU; using FP32 instead. This is expected behavior.
-
-You can stop the script at any time with Ctrl+C. Special voice commands like "goodbye" or "exit" will also stop the script, and "new chat" or "reset chat" will clear the conversation history.
+Note: Special voice commands like "goodbye" or "exit" will stop the script, and "new chat" or "reset chat" will clear the conversation history.
 
 🎛️ 4. Configuration
 You can customize the assistant's behavior using command-line arguments or by editing the config.ini file. Command-line arguments override settings in config.ini.
