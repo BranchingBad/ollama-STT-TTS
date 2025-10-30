@@ -1,3 +1,5 @@
+# Updated config_manager.py
+
 #!/usr/bin/env python3
 
 """
@@ -17,7 +19,7 @@ from typing import Any, Tuple, Optional
 # Import defaults and helpers from audio_utils
 try:
     from audio_utils import (
-        DEFAULT_SETTINGS, 
+        DEFAULT_SETTINGS,
         list_audio_devices,
         list_tts_voices
     )
@@ -29,11 +31,14 @@ CONFIG_FILE_NAME = 'config.ini'
 
 def setup_logging() -> None:
     """Configures the root logger for the application."""
+    # --- UPDATED FORMAT ---
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+        format='%(asctime)s,%(msecs)03d - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    # --- END UPDATE ---
+
     # Quieten noisy libraries
     logging.getLogger("pyttsx3").setLevel(logging.WARNING)
     logging.getLogger("openwakeword").setLevel(logging.WARNING)
@@ -47,7 +52,7 @@ def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
     logging.info(f"Attempting to connect to Ollama at {ollama_host}...")
     try:
         client = ollama.Client(host=ollama_host)
-        client.list() 
+        client.list()
         logging.info("Ollama server connection successful.")
         return client
     except Exception as e:
@@ -60,14 +65,21 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     Loads settings from config.ini, parses command-line arguments,
     and sets up logging.
     """
-    
+
     config = configparser.ConfigParser()
     if os.path.exists(CONFIG_FILE_NAME):
+        # --- Need to call setup_logging *before* reading config ---
+        # --- so that warnings during config load are formatted ---
+        setup_logging()
+        # --- END CHANGE ---
         config.read(CONFIG_FILE_NAME)
         logging.info(f"Loaded configuration from {CONFIG_FILE_NAME}")
     else:
+        # --- Call setup_logging here too for consistency ---
+        setup_logging()
+        # --- END CHANGE ---
         logging.warning(f"{CONFIG_FILE_NAME} not found. Using default settings and CLI args.")
-    
+
     config_models = config['Models'] if 'Models' in config else {}
     config_func = config['Functionality'] if 'Functionality' in config else {}
 
@@ -84,9 +96,9 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         except (ValueError, configparser.NoOptionError):
             logging.warning(f"Invalid value '{val}' for '{key}' in config.ini. Using default: {default}")
             return default
-    
+
     parser = argparse.ArgumentParser(description="A hands-free voice assistant for Ollama.")
-    
+
     parser.add_argument('--list-devices', action='store_true', help="List available audio input devices and exit.")
     parser.add_argument('--list-voices', action='store_true', help="List available TTS voices and exit.")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging.")
@@ -118,7 +130,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         whisper_model=config_models.get('whisper_model', DEFAULT_SETTINGS['whisper_model']),
         wakeword_model_path=config_models.get('wakeword_model_path', DEFAULT_SETTINGS['wakeword_model_path']),
         ollama_host=config_models.get('ollama_host', DEFAULT_SETTINGS['ollama_host']),
-        
+
         wakeword=config_func.get('wakeword', DEFAULT_SETTINGS['wakeword']),
         wakeword_threshold=get_config_val(config_func, 'wakeword_threshold', DEFAULT_SETTINGS['wakeword_threshold'], float),
         vad_aggressiveness=get_config_val(config_func, 'vad_aggressiveness', DEFAULT_SETTINGS['vad_aggressiveness'], int),
@@ -126,11 +138,11 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         listen_timeout=get_config_val(config_func, 'listen_timeout', DEFAULT_SETTINGS['listen_timeout'], float),
         pre_buffer_ms=get_config_val(config_func, 'pre_buffer_ms', DEFAULT_SETTINGS['pre_buffer_ms'], int),
         system_prompt=config_func.get('system_prompt', DEFAULT_SETTINGS['system_prompt']),
-        
+
         device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], lambda x: int(x) if x.lower() != 'none' else None),
         tts_voice_id=get_config_val(config_func, 'tts_voice_id', DEFAULT_SETTINGS['tts_voice_id'], str),
         tts_volume=get_config_val(config_func, 'tts_volume', DEFAULT_SETTINGS['tts_volume'], float),
-        
+
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
         whisper_device=config_func.get('whisper_device', DEFAULT_SETTINGS['whisper_device']),
         whisper_compute_type=config_func.get('whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type']),
@@ -139,12 +151,11 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     args = parser.parse_args()
 
-    setup_logging()
+    # setup_logging() # Moved earlier
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
         logging.debug("DEBUG logging enabled.")
 
-    # --- NEW IMPROVEMENT ---
     # Check if system_prompt is a file path
     if args.system_prompt and os.path.isfile(args.system_prompt):
         logging.info(f"Loading system prompt from file: {args.system_prompt}")
@@ -153,22 +164,28 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
                 args.system_prompt = f.read().strip()
         except Exception as e:
             logging.error(f"Failed to read system prompt file '{args.system_prompt}': {e}")
-            logging.warning("Using the file path as a literal string for the prompt.")
-    # --- END IMPROVEMENT ---
+            logging.warning("Using the default system prompt instead.")
+            # --- Fallback to default ---
+            args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+            # --- END CHANGE ---
+    elif not args.system_prompt:
+         logging.warning("System prompt is empty. Using default.")
+         args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+
 
     if args.list_devices or args.list_voices:
         if args.list_devices:
             try:
-                list_audio_devices() 
+                list_audio_devices()
             except Exception as e:
                 logging.error(f"Could not list audio devices: {e}")
-        
+
         if args.list_voices:
             try:
                 list_tts_voices()
             except Exception as e:
                 logging.error(f"Could not list TTS voices: {e}")
-        
+
         sys.exit(0)
 
     return args, config
