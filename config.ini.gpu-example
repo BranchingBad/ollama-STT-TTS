@@ -1,0 +1,31 @@
+[Models]
+ollama_model = llama3
+whisper_model = base.en
+wakeword_model_path = models/hey_glados.onnx
+piper_model_path = models/en_US-lessac-medium.onnx
+ollama_host = http://localhost:11434
+
+[Functionality]
+wakeword = hey glados
+wakeword_threshold = 0.20
+vad_aggressiveness = 2
+silence_seconds = 0.7
+listen_timeout = 5.0
+pre_buffer_ms = 400
+system_prompt = You are a friendly, concise, and intelligent voice assistant named GLaDOS. Keep your responses short and witty.
+device_index = None
+piper_output_device_index = None
+max_words_per_command = 65
+
+# --- GPU Optimizations for Faster Computer ---
+whisper_device = cuda
+whisper_compute_type = float16
+# --- Faster Model (can be changed to a larger, more capable one) ---
+# Note: Changing 'base.en' to a larger model like 'medium.en' or 'large-v2' 
+# will increase accuracy and quality but *only* work well with a powerful GPU 
+# and the 'cuda' + 'float16' settings below.
+# whisper_model = large-v2
+# --- End Faster Model ---
+
+max_history_tokens = 4096 
+# Increased history token limit: A faster computer can handle a larger context size.
