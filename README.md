@@ -9,7 +9,7 @@ The assistant operates in a continuous loop with the following flow:
 ```mermaid
 flowchart LR
     A[Microphone] --> B(openwakeword);
-    B -- "hey glados" --> C(webrtcvad);
+    B -- "hey jarvis" --> C(webrtcvad);
     C -- "Records until silence" --> D[faster-whisper STT];
     D -- "Transcribes audio" --> E[Ollama LLM];
     E -- "Generates streaming response" --> F[Piper TTS];
@@ -45,7 +45,7 @@ The sounddevice library requires portaudio. faster-whisper may require ffmpeg fo
 On Fedora/RHEL Linux:
 ```Bash
 # Enable RPM Fusion (if not already done) - see https://rpmfusion.org/Configuration
-sudo dnf install portaudio-devel gcc python3-devel ffmpeg espeak pulseaudio-libs-devel
+sudo dnf install portaudio-devel gcc python3-devel ffmpeg  pulseaudio-libs-devel
 ```
 
 On Debian/Ubuntu Linux:
@@ -112,7 +112,7 @@ Run the main script: Make sure your Ollama application is running in the backgro
 python assistant.py
 ```
 
-On the first run, the script will automatically download the faster-whisper (tiny.en by default) and openwakeword (hey_glados.onnx by default) models.
+On the first run, the script will automatically download the faster-whisper (base.en by default) and openwakeword (hey_jarvis_v2.onnx by default) models.
 
 List devices (Optional): To find the index for your microphone or speaker, use these commands:
 ```Bash
@@ -124,9 +124,9 @@ python assistant.py --list-output-devices
 
 Use the index provided by these commands with the ``device_index`` and ``piper_output_device_index`` arguments in ``config.ini``.
 
-Interact: When ready, you will see the message: Ready! Listening for 'hey glados'....
+Interact: When ready, you will see the message: Ready! Listening for 'hey jarvis'....
 
-Say the wakeword (e.g., "``Hey glados``").
+Say the wakeword (e.g., "``Hey jarvis``").
 
 The assistant will respond "Yes?" and begin listening.
 
@@ -163,13 +163,13 @@ python assistant.py --wakeword-threshold 0.5 --vad-aggressiveness 1 --ollama-mod
 
 ``--whisper-model``: Name of the faster-whisper model (e.g., tiny.en, base.en). (Default: ``tiny.en``)
 
-``--wakeword-model-path``: Path to the .onnx wakeword model file. (Default: ``hey_glados.onnx``)
+``--wakeword-model-path``: Path to the .onnx wakeword model file. (Default: ``hey_jarvis.onnx``)
 
 ``--ollama-host``: URL of the Ollama server. (Default: ``http://localhost:11434``)
 
 ### Functionality Group:
 
-``--wakeword``: The wakeword phrase. (Default: ``hey glados``)
+``--wakeword``: The wakeword phrase. (Default: ``hey jarvis``)
 
 ``--wakeword-threshold``: Wakeword detection threshold (0.0 to 1.0). (Default: ``0.45``)
 
@@ -181,7 +181,7 @@ python assistant.py --wakeword-threshold 0.5 --vad-aggressiveness 1 --ollama-mod
 
 ``--pre-buffer-ms``: Milliseconds of audio to keep before speech starts. (Default: ``400``)
 
-``--system-prompt``: The system prompt for the assistant, or a path to a .txt file containing the prompt. (Default: You are a friendly, concise, and intelligent voice assistant named GLaDOS. Keep your responses short and witty.)
+``--system-prompt``: The system prompt for the assistant, or a path to a .txt file containing the prompt. (Default: You are a friendly, concise, and intelligent voice assistant named jarvis. Keep your responses short and witty.)
 
 ``--device-index``: Index of the audio input device (use --list-devices). Set to None for default. (Default: ``13 in config.ini, but None in code defaults``)
 
