@@ -1,109 +1,72 @@
 ((venv) ) steve@slate:~/git-projects/ollama-STT-TTS$ python app/assistant.py --debug
 /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
   import pkg_resources
-INFO 2025-12-06 21:53:54,595 - Loaded configuration from /home/steve/git-projects/ollama-STT-TTS/config.ini
-DEBUG 2025-12-06 21:53:54,596 - DEBUG logging enabled.
-INFO 2025-12-06 21:53:54,596 - Attempting to connect to Ollama at http://localhost:11434...
-DEBUG 2025-12-06 21:53:54,600 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-06 21:53:54,628 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa6b8a44e60>
-DEBUG 2025-12-06 21:53:54,628 - send_request_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:54,629 - send_request_headers.complete
-DEBUG 2025-12-06 21:53:54,629 - send_request_body.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:54,629 - send_request_body.complete
-DEBUG 2025-12-06 21:53:54,629 - receive_response_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:54,630 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Sun, 07 Dec 2025 02:53:54 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-06 21:53:54,630 - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
-DEBUG 2025-12-06 21:53:54,630 - receive_response_body.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:54,630 - receive_response_body.complete
-DEBUG 2025-12-06 21:53:54,630 - response_closed.started
-DEBUG 2025-12-06 21:53:54,630 - response_closed.complete
-INFO 2025-12-06 21:53:54,631 - Ollama server connection successful.
-INFO 2025-12-06 21:53:54,631 - Loading faster-whisper model: base.en on device 'cpu'...
-DEBUG 2025-12-06 21:53:54,732 - connect_tcp.started host='huggingface.co' port=443 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-06 21:53:55,034 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa6b0921640>
-DEBUG 2025-12-06 21:53:55,034 - start_tls.started ssl_context=<ssl.SSLContext object at 0x7fa6b09e9c50> server_hostname='huggingface.co' timeout=None
-DEBUG 2025-12-06 21:53:55,144 - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa6b0deb350>
-DEBUG 2025-12-06 21:53:55,144 - send_request_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:55,144 - send_request_headers.complete
-DEBUG 2025-12-06 21:53:55,144 - send_request_body.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:55,144 - send_request_body.complete
-DEBUG 2025-12-06 21:53:55,144 - receive_response_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:55,233 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'1049'), (b'Connection', b'keep-alive'), (b'Date', b'Sun, 07 Dec 2025 02:53:55 GMT'), (b'ETag', b'W/"419-H4b0J9iBGE+1PZygYdQ4FlgOwnA"'), (b'X-Powered-By', b'huggingface-moon'), (b'X-Request-Id', b'Root=1-6934ec43-41ccc3df49eebf11556ad11c;97b81597-6f06-4c98-8757-2359a3e16ef2'), (b'RateLimit', b'"api";r=499;t=17'), (b'RateLimit-Policy', b'"fixed window";"api";q=500;w=300'), (b'cross-origin-opener-policy', b'same-origin'), (b'Referrer-Policy', b'strict-origin-when-cross-origin'), (b'Access-Control-Max-Age', b'86400'), (b'Access-Control-Allow-Origin', b'https://huggingface.co'), (b'Vary', b'Origin'), (b'Access-Control-Expose-Headers', b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash'), (b'X-Cache', b'Miss from cloudfront'), (b'Via', b'1.1 b3253b615e768e9b2e0a73436b4963a2.cloudfront.net (CloudFront)'), (b'X-Amz-Cf-Pop', b'YUL62-P3'), (b'X-Amz-Cf-Id', b'Shg_tKRsoxwKHirfG3tTN0VkbkappyWidPj8iuQE_ZwGmAG61v7KxA==')])
-INFO 2025-12-06 21:53:55,233 - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-base.en/revision/main "HTTP/1.1 200 OK"
-DEBUG 2025-12-06 21:53:55,233 - receive_response_body.started request=<Request [b'GET']>
-DEBUG 2025-12-06 21:53:55,233 - receive_response_body.complete
-DEBUG 2025-12-06 21:53:55,233 - response_closed.started
-DEBUG 2025-12-06 21:53:55,233 - response_closed.complete
-INFO 2025-12-06 21:53:55,529 - Initializing Piper TTS...
-INFO 2025-12-06 21:53:56,167 - Loaded Piper voice. Rate: 22050Hz
+INFO 2025-12-06 22:00:39,671 - Loaded configuration from /home/steve/git-projects/ollama-STT-TTS/config.ini
+DEBUG 2025-12-06 22:00:39,672 - DEBUG logging enabled.
+INFO 2025-12-06 22:00:39,672 - Attempting to connect to Ollama at http://localhost:11434...
+DEBUG 2025-12-06 22:00:39,679 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-06 22:00:39,680 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f0d98aba960>
+DEBUG 2025-12-06 22:00:39,680 - send_request_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:39,680 - send_request_headers.complete
+DEBUG 2025-12-06 22:00:39,680 - send_request_body.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:39,680 - send_request_body.complete
+DEBUG 2025-12-06 22:00:39,680 - receive_response_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:39,681 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Sun, 07 Dec 2025 03:00:39 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-06 22:00:39,682 - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+DEBUG 2025-12-06 22:00:39,682 - receive_response_body.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:39,682 - receive_response_body.complete
+DEBUG 2025-12-06 22:00:39,682 - response_closed.started
+DEBUG 2025-12-06 22:00:39,682 - response_closed.complete
+INFO 2025-12-06 22:00:39,682 - Ollama server connection successful.
+INFO 2025-12-06 22:00:39,683 - Loading faster-whisper model: base.en on device 'cpu'...
+DEBUG 2025-12-06 22:00:39,748 - connect_tcp.started host='huggingface.co' port=443 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-06 22:00:39,781 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f0d901c7230>
+DEBUG 2025-12-06 22:00:39,781 - start_tls.started ssl_context=<ssl.SSLContext object at 0x7f0d901ddc50> server_hostname='huggingface.co' timeout=None
+DEBUG 2025-12-06 22:00:40,232 - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f0d996956a0>
+DEBUG 2025-12-06 22:00:40,232 - send_request_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:40,233 - send_request_headers.complete
+DEBUG 2025-12-06 22:00:40,233 - send_request_body.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:40,233 - send_request_body.complete
+DEBUG 2025-12-06 22:00:40,233 - receive_response_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:40,319 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'1049'), (b'Connection', b'keep-alive'), (b'Date', b'Sun, 07 Dec 2025 03:00:40 GMT'), (b'ETag', b'W/"419-H4b0J9iBGE+1PZygYdQ4FlgOwnA"'), (b'X-Powered-By', b'huggingface-moon'), (b'X-Request-Id', b'Root=1-6934edd8-2365a1411add3fae5e386f58;fc135747-2b99-4d4a-b0b6-51b5719f1610'), (b'RateLimit', b'"api";r=499;t=212'), (b'RateLimit-Policy', b'"fixed window";"api";q=500;w=300'), (b'cross-origin-opener-policy', b'same-origin'), (b'Referrer-Policy', b'strict-origin-when-cross-origin'), (b'Access-Control-Max-Age', b'86400'), (b'Access-Control-Allow-Origin', b'https://huggingface.co'), (b'Vary', b'Origin'), (b'Access-Control-Expose-Headers', b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash'), (b'X-Cache', b'Miss from cloudfront'), (b'Via', b'1.1 b3253b615e768e9b2e0a73436b4963a2.cloudfront.net (CloudFront)'), (b'X-Amz-Cf-Pop', b'YUL62-P3'), (b'X-Amz-Cf-Id', b'd-IpKxiP8oDzj1Lew_OJanQaEjZI8HJ6aZlwJitjGkMh8ZKPtwg0Gw==')])
+INFO 2025-12-06 22:00:40,319 - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-base.en/revision/main "HTTP/1.1 200 OK"
+DEBUG 2025-12-06 22:00:40,319 - receive_response_body.started request=<Request [b'GET']>
+DEBUG 2025-12-06 22:00:40,319 - receive_response_body.complete
+DEBUG 2025-12-06 22:00:40,319 - response_closed.started
+DEBUG 2025-12-06 22:00:40,319 - response_closed.complete
+INFO 2025-12-06 22:00:40,582 - Initializing Piper TTS...
+INFO 2025-12-06 22:00:41,307 - Loaded Piper voice. Rate: 22050Hz
 /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/onnxruntime/capi/onnxruntime_inference_collection.py:123: UserWarning: Specified provider 'CUDAExecutionProvider' is not in available provider names.Available providers: 'AzureExecutionProvider, CPUExecutionProvider'
   warnings.warn(
-INFO 2025-12-06 21:53:56,378 - Ready! Listening for 'hey jarvis'...
-DEBUG 2025-12-06 21:53:56,396 - Audio stream started.
-INFO 2025-12-06 21:53:59,841 - Wakeword detected!
-DEBUG 2025-12-06 21:54:00,574 - Audio stream started.
-INFO 2025-12-06 21:54:02,272 - Processing audio with duration 00:01.500
-DEBUG 2025-12-06 21:54:02,280 - Processing segment at 00:00.000
-INFO 2025-12-06 21:54:03,135 - You: What time is it?
-DEBUG 2025-12-06 21:54:03,136 - close.started
-DEBUG 2025-12-06 21:54:03,136 - close.complete
-DEBUG 2025-12-06 21:54:03,136 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-06 21:54:03,137 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa6b09fe870>
-DEBUG 2025-12-06 21:54:03,137 - send_request_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:03,137 - send_request_headers.complete
-DEBUG 2025-12-06 21:54:03,137 - send_request_body.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:03,137 - send_request_body.complete
-DEBUG 2025-12-06 21:54:03,137 - receive_response_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:06,520 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Sun, 07 Dec 2025 02:54:06 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-06 21:54:06,520 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-DEBUG 2025-12-06 21:54:06,520 - receive_response_body.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:09,192 - receive_response_body.complete
-DEBUG 2025-12-06 21:54:09,192 - response_closed.started
-DEBUG 2025-12-06 21:54:09,192 - response_closed.complete
-DEBUG 2025-12-06 21:54:11,056 - Audio stream started.
-INFO 2025-12-06 21:54:11,056 - 
+INFO 2025-12-06 22:00:41,566 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-06 22:00:41,584 - Audio stream started.
+INFO 2025-12-06 22:00:44,395 - Wakeword detected!
+DEBUG 2025-12-06 22:00:45,179 - Audio stream started.
+INFO 2025-12-06 22:00:47,936 - Processing audio with duration 00:01.500
+DEBUG 2025-12-06 22:00:47,940 - Processing segment at 00:00.000
+INFO 2025-12-06 22:00:49,214 - You: Hey Jarvis, what time is it?
+DEBUG 2025-12-06 22:00:49,215 - close.started
+DEBUG 2025-12-06 22:00:49,215 - close.complete
+DEBUG 2025-12-06 22:00:49,215 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-06 22:00:49,216 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f0d901f29f0>
+DEBUG 2025-12-06 22:00:49,216 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-06 22:00:49,216 - send_request_headers.complete
+DEBUG 2025-12-06 22:00:49,216 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-06 22:00:49,216 - send_request_body.complete
+DEBUG 2025-12-06 22:00:49,217 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-06 22:01:19,411 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Sun, 07 Dec 2025 03:01:19 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-06 22:01:19,412 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-06 22:01:19,412 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-06 22:01:24,117 - receive_response_body.complete
+DEBUG 2025-12-06 22:01:24,117 - response_closed.started
+DEBUG 2025-12-06 22:01:24,117 - response_closed.complete
+DEBUG 2025-12-06 22:01:26,179 - Audio stream started.
+INFO 2025-12-06 22:01:26,179 - 
 Ready! Listening for 'hey jarvis'...
-INFO 2025-12-06 21:54:11,234 - Wakeword detected!
-DEBUG 2025-12-06 21:54:12,057 - Audio stream started.
-INFO 2025-12-06 21:54:15,628 - Processing audio with duration 00:01.830
-DEBUG 2025-12-06 21:54:15,630 - Processing segment at 00:00.000
-INFO 2025-12-06 21:54:16,745 - You: Hey Jarvis, goodbye.
-DEBUG 2025-12-06 21:54:16,746 - close.started
-DEBUG 2025-12-06 21:54:16,746 - close.complete
-DEBUG 2025-12-06 21:54:16,746 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-06 21:54:16,747 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa6b09d31a0>
-DEBUG 2025-12-06 21:54:16,747 - send_request_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:16,747 - send_request_headers.complete
-DEBUG 2025-12-06 21:54:16,747 - send_request_body.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:16,747 - send_request_body.complete
-DEBUG 2025-12-06 21:54:16,747 - receive_response_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:21,743 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Sun, 07 Dec 2025 02:54:21 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-06 21:54:21,743 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-DEBUG 2025-12-06 21:54:21,743 - receive_response_body.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:24,411 - receive_response_body.complete
-DEBUG 2025-12-06 21:54:24,412 - response_closed.started
-DEBUG 2025-12-06 21:54:24,412 - response_closed.complete
-DEBUG 2025-12-06 21:54:25,823 - Audio stream started.
-INFO 2025-12-06 21:54:25,823 - 
-Ready! Listening for 'hey jarvis'...
-INFO 2025-12-06 21:54:25,958 - Wakeword detected!
-DEBUG 2025-12-06 21:54:26,703 - Audio stream started.
-INFO 2025-12-06 21:54:29,862 - Processing audio with duration 00:01.440
-DEBUG 2025-12-06 21:54:29,864 - Processing segment at 00:00.000
-INFO 2025-12-06 21:54:30,812 - You: Hey, you turn them as quick.
-DEBUG 2025-12-06 21:54:30,812 - close.started
-DEBUG 2025-12-06 21:54:30,813 - close.complete
-DEBUG 2025-12-06 21:54:30,813 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-06 21:54:30,813 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa6b09ff200>
-DEBUG 2025-12-06 21:54:30,813 - send_request_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:30,813 - send_request_headers.complete
-DEBUG 2025-12-06 21:54:30,813 - send_request_body.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:30,814 - send_request_body.complete
-DEBUG 2025-12-06 21:54:30,814 - receive_response_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:36,269 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Sun, 07 Dec 2025 02:54:36 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-06 21:54:36,269 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-DEBUG 2025-12-06 21:54:36,270 - receive_response_body.started request=<Request [b'POST']>
-DEBUG 2025-12-06 21:54:38,843 - receive_response_body.complete
-DEBUG 2025-12-06 21:54:38,843 - response_closed.started
-DEBUG 2025-12-06 21:54:38,843 - response_closed.complete
-DEBUG 2025-12-06 21:54:40,330 - Audio stream started.
+INFO 2025-12-06 22:01:26,399 - Wakeword detected!
+DEBUG 2025-12-06 22:01:27,108 - Audio stream started.
+INFO 2025-12-06 22:01:30,432 - Processing audio with duration 00:01.920
+DEBUG 2025-12-06 22:01:30,436 - Processing segment at 00:00.000
+INFO 2025-12-06 22:01:31,203 - You: Hey drivers, goodbye.
+DEBUG 2025-12-06 22:01:31,962 - close.started
+DEBUG 2025-12-06 22:01:31,962 - close.complete

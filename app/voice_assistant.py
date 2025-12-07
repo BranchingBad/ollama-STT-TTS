@@ -85,7 +85,7 @@ class VoiceAssistant:
             return
 
         # Check for exit commands
-        if "exit" in user_text.lower():
+        if "exit" in user_text.lower() or "goodbye" in user_text.lower():
             self.tts.speak("Goodbye.")
             self.tts.stop()
             exit(0)
