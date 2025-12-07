@@ -17,10 +17,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the modularized application files
-COPY assistant.py .
-COPY config_manager.py .
-COPY audio_utils.py .
+# Copy the application source code
+COPY app/ ./app/
 COPY config.ini .
 
 # Create a models directory and copy all models into it
@@ -29,4 +27,4 @@ RUN mkdir models
 COPY models/ ./models/
 
 # Command to run the application when the container starts
-CMD ["python3", "assistant.py"]
+CMD ["python3", "app/assistant.py"]

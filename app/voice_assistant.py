@@ -59,33 +59,38 @@ class VoiceAssistant:
             self.cleanup()
 
     def _handle_conversation(self):
-        self.audio.pause()
+        self.audio.stop()
         self.tts.speak("Yes?")
         self.tts.queue.join()
-        self.audio.resume()
-
+        
         self.interrupt_event.clear()
         
-        # 3. Listen for Command
+        # Start listening for command
+        self.audio.start()
         audio_np = self.audio.record_phrase(self.interrupt_event, self.args.listen_timeout)
+        
+        # Stop listening and process
+        self.audio.stop()
+        
         if audio_np is None:
+            self.audio.start() # Ensure we start listening again before exiting
             return
 
-        # 4. Transcribe
+        # Transcribe
         user_text = self.transcriber.transcribe(audio_np)
         logging.info(f"You: {user_text}")
         
-        if not user_text.strip(): return
+        if not user_text.strip():
+            self.audio.start() # Ensure we start listening again before exiting
+            return
 
         # Check for exit commands
         if "exit" in user_text.lower():
-            self.audio.pause()
             self.tts.speak("Goodbye.")
             self.tts.stop()
             exit(0)
 
-        # 5. Get LLM Response & Speak
-        self.audio.pause()
+        # Get LLM Response & Speak
         sentence_buffer = ""
         for token in self.llm.chat_stream(user_text):
             if token is None: break # Error
@@ -104,7 +109,7 @@ class VoiceAssistant:
             self.tts.speak(sentence_buffer.strip())
             
         self.tts.queue.join() # Wait for speech to finish
-        self.audio.resume()
+        self.audio.start()
 
     def cleanup(self):
         self.audio.stop()
