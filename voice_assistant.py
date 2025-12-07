@@ -26,7 +26,6 @@ import os
 import gc
 import json
 from piper import PiperVoice
-# Added for transcription timeout
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 
@@ -66,7 +65,7 @@ class VoiceAssistant:
         # Calculate derived audio settings
         CHUNK_DURATION_MS: int = 30
         self.silence_chunks: int = int(args.silence_seconds * 1000 / CHUNK_DURATION_MS)
-        self.pre_speech_timeout_seconds: float = args.listen_timeout # Used for time-based check
+        self.pre_speech_timeout_seconds: float = args.listen_timeout
         self.pre_buffer_size_chunks: int = int(args.pre_buffer_ms / CHUNK_DURATION_MS)
 
         logging.info("Loading models...")
@@ -121,7 +120,7 @@ class VoiceAssistant:
         # Piper TTS Engine Setup
         logging.info("Initializing TTS engine (Piper)...")
         self.piper_voice: Optional[PiperVoice] = None
-        self.piper_sample_rate: int = 16000  # Default, will be overwritten
+        self.piper_sample_rate: int = 16000
         try:
             self.piper_model_path: str = args.piper_model_path
             self.piper_config_path: str = args.piper_model_path + ".json"
@@ -140,7 +139,6 @@ class VoiceAssistant:
             # Check for consistency with audio_utils RATE (16000)
             if self.piper_sample_rate != RATE:
                  logging.warning(f"Piper sample rate ({self.piper_sample_rate} Hz) differs from VAD/Whisper rate ({RATE} Hz). Audio output quality may be affected.")
-
 
             # Load Piper voice
             self.piper_voice = PiperVoice.load(self.piper_model_path, self.piper_config_path)
@@ -218,7 +216,7 @@ class VoiceAssistant:
             text: str | None = None
             try:
                 text = self.tts_queue.get(timeout=0.1)
-                if text is None:  # Shutdown signal
+                if text is None:
                     break
 
                 if self.piper_voice is None:
@@ -226,7 +224,6 @@ class VoiceAssistant:
 
                 self.is_speaking_event.set()
 
-                # --- FIX: Use context manager for sounddevice.OutputStream ---
                 with sd.OutputStream(
                     samplerate=self.piper_sample_rate,
                     device=self.args.piper_output_device_index,
@@ -234,16 +231,12 @@ class VoiceAssistant:
                     dtype='int16'
                 ) as stream:
                     
-                    # Synthesize and play audio chunk by chunk
                     for audio_chunk in self.piper_voice.synthesize(text):
                         if self.interrupt_event.is_set():
-                            # Break out of the synthesis loop
                             break 
                         
                         audio_np = np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16)
                         stream.write(audio_np)
-                # The 'with' statement guarantees stream.stop() and stream.close() are called.
-                # --- END FIX ---
 
                 consecutive_errors = 0
 
@@ -262,8 +255,6 @@ class VoiceAssistant:
                 if text is not None:
                     self.tts_queue.task_done()
                 
-                # If the queue is empty and no interrupt is set, the speech has finished naturally.
-                # This check must run *after* the stream has closed.
                 if self.tts_queue.empty() and not self.interrupt_event.is_set():
                     self.is_speaking_event.clear()
 
@@ -275,7 +266,7 @@ class VoiceAssistant:
         logging.info(f"Assistant: {text}")
         
         if self.interrupt_event.is_set():
-             with self.tts_queue.mutex: # Clear the queue if an interrupt has been requested
+             with self.tts_queue.mutex:
                 self.tts_queue.queue.clear()
 
         self.tts_queue.put(text)
@@ -293,7 +284,6 @@ class VoiceAssistant:
             return
 
         self.tts_queue.join()
-        # is_speaking_event is cleared by _tts_worker or stop_generation()
         logging.debug("Speech finished.")
 
     def stop_generation(self, log_message: str) -> None:
@@ -303,29 +293,33 @@ class VoiceAssistant:
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
         
-        # Explicitly clear the speaking flag on interrupt
         self.is_speaking_event.clear()
 
     def _audio_monitor_worker(self) -> None:
-        """Monitors stream_buffer for barge-in during LLM/TTS."""
+        """
+        Monitors stream_buffer for barge-in during LLM/TTS.
+        CRITICAL FIX: Only checks for interruption when NOT currently speaking.
+        This prevents the assistant from detecting its own voice as a user interruption.
+        """
         logging.debug("Audio monitor started.")
+        
         while self.is_processing_command.is_set():
             try:
-                # We must *always* get chunks from the buffer
-                # to prevent it from filling up.
                 chunk: bytes = self.stream_buffer.get(timeout=0.1)
             except queue.Empty:
                 continue
 
             if chunk:
-                # Only check for barge-in if the interrupt *isn't already set*
-                if not self.interrupt_event.is_set():
+                # CRITICAL FIX: Only check for barge-in if NOT currently speaking
+                # This solves the acoustic echo problem where the assistant hears itself
+                if not self.is_speaking_event.is_set() and not self.interrupt_event.is_set():
                     is_speech = self.vad.is_speech(chunk, RATE)
                     if is_speech:
                         logging.info("User interruption (barge-in) detected!")
                         self.interrupt_event.set()
                 
                 self.stream_buffer.task_done()
+        
         logging.debug("Audio monitor stopped.")
 
 
@@ -368,7 +362,7 @@ class VoiceAssistant:
             logging.error(f"faster-whisper transcription error: {e}")
             return ""
         finally:
-            executor.shutdown(wait=False) # Ensure the executor is stopped
+            executor.shutdown(wait=False)
             
         return full_text
 
@@ -380,11 +374,9 @@ class VoiceAssistant:
         is_speaking = False
         pre_buffer: list[bytes] = []
         
-        # Use time-based timeout
         start_time = time.time()
         timeout_duration = self.pre_speech_timeout_seconds
 
-        # Clear queue of any audio from "Yes?" playback
         with self.stream_buffer.mutex:
             self.stream_buffer.queue.clear()
 
@@ -393,7 +385,6 @@ class VoiceAssistant:
                  logging.warning("Recording interrupted.")
                  return None
                  
-            # Check time-based timeout outside the queue get block
             if not is_speaking and (time.time() - start_time > timeout_duration):
                 logging.warning(f"No speech detected after {timeout_duration}s, timing out.")
                 return None
@@ -427,7 +418,6 @@ class VoiceAssistant:
                         pre_buffer.pop(0)
 
             except queue.Empty:
-                # Time-based timeout is handled at the start of the loop
                 continue
             except Exception as e:
                 logging.error(f"Unexpected error during recording: {e}")
@@ -435,7 +425,6 @@ class VoiceAssistant:
 
         if not frames: return None
         audio_data: bytes = b''.join(frames)
-        # UPDATED: Use INT16_MAX
         audio_np: npt.NDArray[np.float32] = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_MAX
         return audio_np
 
@@ -496,11 +485,9 @@ class VoiceAssistant:
         if assistant_response.strip():
             self.messages.append({'role': 'assistant', 'content': assistant_response})
         else:
-            # If the response was empty, roll back the user's message.
             if self.messages and self.messages[-1]['role'] == 'user' and self.messages[-1]['content'] == user_text:
                  self.messages.pop()
                  logging.warning("LLM response empty or interrupted, user message rolled back.")
-                 # Reset token count to 0 to ensure turn-based fallback is used on the next command.
                  self.last_known_token_count = 0
             else:
                  logging.error(f"Failed to roll back user message. History structure is unexpected.")
@@ -529,7 +516,6 @@ class VoiceAssistant:
                 self.speak("I'm sorry, I seem to have lost my connection. Please check if the Ollama server is running.")
                 full_response = "" 
                 
-                # Pop the user message and reset token count on connection failure
                 if self.messages and self.messages[-1]['role'] == 'user' and self.messages[-1]['content'] == user_text:
                     self.messages.pop()
                     self.last_known_token_count = 0 
@@ -567,9 +553,6 @@ class VoiceAssistant:
             if final_chunk:
                 self.last_known_token_count = final_chunk.get('prompt_eval_count', 0)
                 logging.debug(f"Updated history. New total token count: {self.last_known_token_count}")
-            # Note: If full_response was empty (due to an error or interruption), 
-            # the last_known_token_count was already reset to 0 in _update_history, 
-            # making any further explicit reset here redundant.
 
 
     def process_user_command(self) -> bool:
@@ -581,7 +564,6 @@ class VoiceAssistant:
         monitor_thread: Optional[threading.Thread] = None
 
         try:
-            # This is GOOD. It cleans up the flag from the *previous* run.
             if self.interrupt_event.is_set():
                  logging.info("Resetting interrupt event.")
                  self.interrupt_event.clear()
@@ -594,17 +576,14 @@ class VoiceAssistant:
                     self.wait_for_speech()
                 return False
             
-            if self.interrupt_event.is_set(): return False # Interrupted during recording
+            if self.interrupt_event.is_set(): return False
             
-            # Clear the buffer after recording.
             with self.stream_buffer.mutex:
                 self.stream_buffer.queue.clear()
 
             logging.info("Transcribing audio...")
             
-            # --- Transcription with Timeout ---
             user_text: str = self.transcribe_audio(audio_data)
-            # --- End Transcription with Timeout ---
             
             if not user_text:
                 logging.warning("Transcription failed or timed out.")
@@ -632,7 +611,6 @@ class VoiceAssistant:
                 self.wait_for_speech()
                 return False
 
-            # Start the barge-in monitor
             monitor_thread = threading.Thread(target=self._audio_monitor_worker, daemon=True)
             monitor_thread.start()
 
@@ -647,7 +625,7 @@ class VoiceAssistant:
             return False
         
         finally:
-            self.is_processing_command.clear() # Clear flag at the very end
+            self.is_processing_command.clear()
             if monitor_thread and monitor_thread.is_alive():
                 logging.debug("Joining audio monitor thread...")
                 monitor_thread.join(timeout=0.2)
@@ -679,7 +657,6 @@ class VoiceAssistant:
             logging.critical(f"FATAL: Failed to open audio stream: {e}")
             return
 
-        # Ensure OWW model state is clean at startup.
         self.oww_model.reset()
 
         logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
@@ -702,7 +679,6 @@ class VoiceAssistant:
                     continue
 
                 if audio_chunk:
-                    # Don't process for wakeword if we are already processing
                     if self.is_processing_command.is_set():
                         continue
                         
@@ -710,7 +686,7 @@ class VoiceAssistant:
                     prediction: dict[str, float] = self.oww_model.predict(audio_np_int16)
                     score = prediction.get(self.wakeword_model_key, 0)
                     
-                    if score > 0.1: # Only log if there's *some* sound
+                    if score > 0.1:
                         logging.debug(f"Wakeword score: {score:.2f} (Threshold: {self.args.wakeword_threshold})")
 
                     if score > self.args.wakeword_threshold:
@@ -745,7 +721,6 @@ class VoiceAssistant:
 
         if hasattr(self, 'whisper_model'):
             try:
-                # Simplified cleanup for Whisper model
                 if self.whisper_device == 'cuda' and TORCH_AVAILABLE and torch.cuda.is_available():
                     logging.info("Releasing CUDA memory...")
                     del self.whisper_model
@@ -757,15 +732,11 @@ class VoiceAssistant:
             except Exception as e:
                 logging.warning(f"Error releasing Whisper model: {e}")
 
-        # --- CRITICAL FIX: Consolidated and completed TTS thread cleanup ---
         if hasattr(self, 'tts_thread'):
             self.tts_stop_event.set()
             
             if hasattr(self, 'tts_queue'):
-                self.tts_queue.put(None) # Send shutdown signal to unblock queue.get()
+                self.tts_queue.put(None)
             
             if self.tts_thread.is_alive():
                 self.tts_thread.join(timeout=1.0)
-                if self.tts_thread.is_alive(): # <-- Completed line
-                    logging.warning("TTS thread did not shut down cleanly.")
-        # --- END CRITICAL FIX ---

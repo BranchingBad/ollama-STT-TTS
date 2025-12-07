@@ -4,6 +4,11 @@
 config_manager.py
 
 Handles loading configuration from config.ini and command-line arguments.
+
+FIXES APPLIED:
+- Added path sanitization for security (High Priority #16)
+- Improved file path validation
+- Added system prompt file size limit
 """
 
 import configparser
@@ -12,7 +17,7 @@ import logging
 import sys
 import os
 import ollama
-from typing import Any, Tuple, Optional, Literal # Literal imported but only used for type checking clarity
+from typing import Any, Tuple, Optional
 
 # Import defaults and helpers from audio_utils
 try:
@@ -27,6 +32,63 @@ except ImportError:
 
 CONFIG_FILE_NAME = 'config.ini'
 
+# FIX #16: Security constants for path validation
+MAX_SYSTEM_PROMPT_FILE_SIZE = 10 * 1024  # 10KB limit for system prompt files
+ALLOWED_MODEL_DIRECTORIES = ['models', 'Models', './models', './Models']
+
+def sanitize_file_path(file_path: str, description: str = "file") -> str:
+    """
+    FIX #16: Sanitizes and validates file paths to prevent path traversal attacks.
+    
+    Args:
+        file_path: The path to sanitize
+        description: Description of the file for error messages
+    
+    Returns:
+        Absolute path if valid
+        
+    Raises:
+        ValueError: If path is invalid or potentially malicious
+    """
+    if not file_path:
+        raise ValueError(f"Empty {description} path provided")
+    
+    # Get absolute path and normalize
+    abs_path = os.path.abspath(file_path)
+    
+    # Check for path traversal attempts
+    if '..' in file_path:
+        logging.warning(f"Path traversal detected in {description} path: {file_path}")
+        raise ValueError(f"Invalid {description} path: path traversal not allowed")
+    
+    # For model files, ensure they're in allowed directories
+    if 'model' in description.lower():
+        path_valid = False
+        current_dir = os.path.abspath('.')
+        
+        for allowed_dir in ALLOWED_MODEL_DIRECTORIES:
+            allowed_abs = os.path.abspath(allowed_dir)
+            try:
+                # Check if the file is within an allowed directory
+                os.path.commonpath([allowed_abs, abs_path])
+                if abs_path.startswith(allowed_abs):
+                    path_valid = True
+                    break
+            except ValueError:
+                # Paths are on different drives (Windows) or not related
+                continue
+        
+        if not path_valid:
+            # Allow absolute paths that exist (for custom installations)
+            if os.path.exists(abs_path):
+                logging.warning(f"{description} path outside standard directories: {abs_path}")
+                path_valid = True
+        
+        if not path_valid:
+            raise ValueError(f"Invalid {description} path: must be in models/ directory or provide absolute path")
+    
+    return abs_path
+
 def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
     """
     Tries to connect to the Ollama server and returns a client instance.
@@ -40,9 +102,7 @@ def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
         return client
     except Exception as e:
         logging.error(f"Failed to connect to Ollama at {ollama_host}: {e}")
-        # --- FIX: Changed advisory log level from error to warning ---
         logging.warning("Please ensure Ollama is running and the 'ollama_host' in config.ini is correct.")
-        # --- END FIX ---
         return None
 
 # Define a custom type converter for device indices that handles 'none'
@@ -55,9 +115,7 @@ def device_index_type(value: str) -> Optional[int]:
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid device index: '{value}'. Must be an integer or 'none'.")
 
-# --- IMPROVEMENT: Changed return type hint from Literal[True, False] to bool ---
 def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser, bool]:
-# --- END IMPROVEMENT ---
     """
     Loads settings from config.ini, parses command-line arguments,
     and sets up logging.
@@ -72,7 +130,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         logging.info(f"Loaded configuration from {CONFIG_FILE_NAME}")
         config_loaded = True
     else:
-        # Logging setup is now expected to be done in assistant.py
         logging.warning(f"{CONFIG_FILE_NAME} not found. Using default settings and CLI args.")
 
     config_models = config['Models'] if 'Models' in config else {}
@@ -80,7 +137,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     def get_config_val(section: configparser.SectionProxy, key: str, default: Any, type_converter: type) -> Any:
         """Helper to get and convert config values, handling 'none' string and missing config file."""
-        # Use config_loaded flag to prevent logging warnings when config is totally missing
         if not config_loaded:
              return default
 
@@ -96,7 +152,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
             
             return type_converter(val)
         except (ValueError, configparser.NoOptionError):
-            # Only warn if config was loaded but had an invalid value
             logging.warning(f"Invalid value '{val}' for '{key}' in config.ini. Using default: {default}")
             return default
 
@@ -129,6 +184,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--whisper-device', type=str, default=DEFAULT_SETTINGS['whisper_device'], help="Device for Whisper (e.g., 'cpu', 'cuda').")
     func_group.add_argument('--whisper-compute-type', type=str, default=DEFAULT_SETTINGS['whisper_compute_type'], help="Compute type for Whisper (e.g., 'int8', 'float16').")
     func_group.add_argument('--max-history-tokens', type=int, default=DEFAULT_SETTINGS['max_history_tokens'], help="Maximum token context for chat history.")
+    func_group.add_argument('--audio-buffer-size', type=int, default=DEFAULT_SETTINGS['audio_buffer_size'], help="Size of the audio buffer queue (default: 200).")
 
     # Apply configuration defaults
     parser.set_defaults(
@@ -155,7 +211,8 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
         whisper_device=get_config_val(config_func, 'whisper_device', DEFAULT_SETTINGS['whisper_device'], str),
         whisper_compute_type=get_config_val(config_func, 'whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type'], str),
-        max_history_tokens=get_config_val(config_func, 'max_history_tokens', DEFAULT_SETTINGS['max_history_tokens'], int)
+        max_history_tokens=get_config_val(config_func, 'max_history_tokens', DEFAULT_SETTINGS['max_history_tokens'], int),
+        audio_buffer_size=get_config_val(config_func, 'audio_buffer_size', DEFAULT_SETTINGS['audio_buffer_size'], int)
     )
 
     args = parser.parse_args()
@@ -165,25 +222,46 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         logging.getLogger().setLevel(logging.DEBUG)
         logging.debug("DEBUG logging enabled.")
 
-    # Check if system_prompt is a file path
+    # FIX #16: Sanitize model file paths
+    try:
+        args.wakeword_model_path = sanitize_file_path(args.wakeword_model_path, "wakeword model")
+        args.piper_model_path = sanitize_file_path(args.piper_model_path, "Piper TTS model")
+    except ValueError as e:
+        logging.critical(f"Security error: {e}")
+        logging.critical("Please check your model paths in config.ini or command-line arguments.")
+        sys.exit(1)
+
+    # FIX #16: Check if system_prompt is a file path with validation
     if args.system_prompt and os.path.isfile(args.system_prompt):
         logging.info(f"Loading system prompt from file: {args.system_prompt}")
-        file_content = None
+        
         try:
-            with open(args.system_prompt, 'r', encoding='utf-8') as f:
+            # Sanitize the path
+            prompt_file_path = sanitize_file_path(args.system_prompt, "system prompt file")
+            
+            # FIX #16: Check file size before reading
+            file_size = os.path.getsize(prompt_file_path)
+            if file_size > MAX_SYSTEM_PROMPT_FILE_SIZE:
+                raise ValueError(f"System prompt file too large ({file_size} bytes). Maximum allowed: {MAX_SYSTEM_PROMPT_FILE_SIZE} bytes")
+            
+            with open(prompt_file_path, 'r', encoding='utf-8') as f:
                 file_content = f.read().strip()
             
-            # --- IMPROVEMENT: Explicit fallback if file is empty ---
             if file_content:
                 args.system_prompt = file_content
+                logging.info(f"Loaded system prompt ({len(file_content)} characters) from file.")
             else:
                 logging.warning(f"System prompt file '{args.system_prompt}' is empty. Using default.")
                 args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+                
+        except ValueError as e:
+            logging.error(f"Security error with system prompt file: {e}")
+            logging.warning("Using the default system prompt instead.")
+            args.system_prompt = DEFAULT_SETTINGS['system_prompt']
         except Exception as e:
             logging.error(f"Failed to read system prompt file '{args.system_prompt}': {e}")
             logging.warning("Using the default system prompt instead.")
             args.system_prompt = DEFAULT_SETTINGS['system_prompt']
-        # --- END IMPROVEMENT ---
     
     # Device listing logic
     if args.list_devices or args.list_output_devices:

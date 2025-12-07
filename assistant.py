@@ -16,24 +16,27 @@ try:
     from config_manager import load_config_and_args, get_ollama_client
     from voice_assistant import VoiceAssistant
 except ImportError as e:
-    print(f"FATAL: Missing required Python module: {e.name}. Please ensure all dependencies are installed (e.g., via pip install -r requirements.txt).", file=sys.stderr)
+    print(
+        f"FATAL: Missing required Python module: {e.name}. Please ensure all dependencies are installed (e.g., via pip install -r requirements.txt).",
+        file=sys.stderr,
+    )
     sys.exit(1)
 # --- END IMPROVEMENT ---
 
+
 def setup_logging():
     """Configures the logging format and level."""
-    log_format = '%(levelname)s %(asctime)s - %(message)s'
+    log_format = "%(levelname)s %(asctime)s - %(message)s"
     logging.basicConfig(
         level=logging.INFO,
         format=log_format,
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
+
 
 def main() -> None:
     """The entry point for the assistant application."""
-    
+
     # Initialize logging first to catch all subsequent errors
     try:
         setup_logging()
@@ -45,7 +48,7 @@ def main() -> None:
     assistant: VoiceAssistant | None = None
     try:
         args, _, should_exit = load_config_and_args()
-        
+
         # Handle device listing exit flag
         if should_exit:
             # config_manager has already printed the device list.
@@ -53,12 +56,14 @@ def main() -> None:
 
         # Get the Ollama client *once* and pass it to the assistant.
         ollama_client = get_ollama_client(args.ollama_host)
-        
+
         if ollama_client is None:
-            logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
+            logging.warning(
+                "Ollama server not reachable. Assistant will run but cannot respond."
+            )
 
         assistant = VoiceAssistant(args, ollama_client)
-        
+
         assistant.run()
 
     except IOError as e:
@@ -74,6 +79,7 @@ def main() -> None:
         # Ensure cleanup runs even if initialization failed
         if assistant:
             assistant.cleanup()
+
 
 if __name__ == "__main__":
     try:
