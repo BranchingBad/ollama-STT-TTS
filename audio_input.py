@@ -1,5 +1,6 @@
 import logging
 import queue
+import threading
 import time
 import numpy as np
 import sounddevice as sd
@@ -14,6 +15,7 @@ class AudioInput:
         self.vad = webrtcvad.Vad(args.vad_aggressiveness)
         self.stream_buffer = queue.Queue(maxsize=args.audio_buffer_size)
         self.stream = None
+        self.paused = threading.Event()
         
         # Derived settings
         self.silence_chunks = int(args.silence_seconds * 1000 / 30)
@@ -42,7 +44,16 @@ class AudioInput:
             self.stream.close()
             self.stream = None
 
+    def pause(self):
+        self.paused.set()
+
+    def resume(self):
+        self.paused.clear()
+        self.clear_buffer()
+
     def _callback(self, indata, frames, time, status):
+        if self.paused.is_set():
+            return
         if status: logging.warning(f"Audio status: {status}")
         try:
             self.stream_buffer.put_nowait(indata.tobytes())

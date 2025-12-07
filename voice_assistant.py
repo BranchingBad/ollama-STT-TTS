@@ -59,7 +59,11 @@ class VoiceAssistant:
             self.cleanup()
 
     def _handle_conversation(self):
+        self.audio.pause()
         self.tts.speak("Yes?")
+        self.tts.queue.join()
+        self.audio.resume()
+
         self.interrupt_event.clear()
         
         # 3. Listen for Command
@@ -75,11 +79,13 @@ class VoiceAssistant:
 
         # Check for exit commands
         if "exit" in user_text.lower():
+            self.audio.pause()
             self.tts.speak("Goodbye.")
             self.tts.stop()
             exit(0)
 
         # 5. Get LLM Response & Speak
+        self.audio.pause()
         sentence_buffer = ""
         for token in self.llm.chat_stream(user_text):
             if token is None: break # Error
@@ -98,6 +104,7 @@ class VoiceAssistant:
             self.tts.speak(sentence_buffer.strip())
             
         self.tts.queue.join() # Wait for speech to finish
+        self.audio.resume()
 
     def cleanup(self):
         self.audio.stop()
