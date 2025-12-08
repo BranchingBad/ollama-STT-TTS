@@ -54,8 +54,15 @@ class AudioInput:
             # Apply gain
             if self.args.gain != 1.0:
                 # Ensure gain is not negative
-                gain = max(0, self.args.gain)
-                indata = (indata.astype(np.float32) * gain).astype(np.int16)
+                gain = max(0.0, self.args.gain) # Ensure gain is non-negative
+                original_peak = np.max(np.abs(indata))
+                
+                # Convert to float32, apply gain, then clamp to int16 range before converting back
+                indata_float = indata.astype(np.float32) * gain
+                indata = np.clip(indata_float, -INT16_MAX, INT16_MAX).astype(np.int16)
+                
+                new_peak = np.max(np.abs(indata))
+                logging.debug(f"Applied gain {gain:.2f}. Original peak: {original_peak:.0f}, New peak: {new_peak:.0f}")
 
             self.stream_buffer.put_nowait(indata.tobytes())
         except queue.Full:
@@ -184,14 +191,15 @@ class AudioInput:
             logging.debug(f"Recording too short ({total_duration:.2f}s), discarding")
             return None
         
+        
         # Convert to float32 for Whisper
         audio_data = b''.join(frames)
         audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_MAX
         
-        # Final quality check
+        # Final quality check - allow Whisper to decide if it's speech
         final_rms = np.sqrt(np.mean(audio_np**2))
-        if final_rms < 0.005:
-            logging.debug(f"Final audio too quiet (RMS: {final_rms:.4f}), discarding")
-            return None
-        
+        if final_rms < 0.005: # This is very strict.
+            logging.debug(f"Final audio very quiet (RMS: {final_rms:.4f}), passing to transcriber with warning")
+            # Don't return None; let Whisper decide
+            
         return audio_np

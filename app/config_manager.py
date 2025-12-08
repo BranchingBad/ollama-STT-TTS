@@ -137,15 +137,39 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     def get_config_val(section: configparser.SectionProxy, key: str, default: Any, type_converter: type) -> Any:
         if not config_loaded:
              return default
-        val = section.get(key, fallback=default)
-        try:
-            if type_converter == bool:
+
+        # configparser's getboolean is robust, so use it directly for bools
+        if type_converter == bool:
+            try:
                 return section.getboolean(key, fallback=default)
-            if type_converter == int and str(val).lower() == 'none':
+            except ValueError: # Handle cases where boolean value is malformed
+                logging.warning(f"Invalid boolean value for '{key}' in config.ini. Using default: {default}")
+                return default
+        
+        raw_val = section.get(key) # Get raw value first
+
+        processed_val = None
+        if raw_val is not None:
+            # Strip inline comments for string values
+            if isinstance(raw_val, str):
+                processed_val = raw_val.split('#')[0].strip()
+            else:
+                processed_val = raw_val # Keep non-string values as is (configparser usually returns strings, but for safety)
+        
+        # If after processing, we have an empty string or None, use the default
+        if processed_val is None or (isinstance(processed_val, str) and processed_val == ''):
+            processed_val = default
+
+        try:
+            # For int type, handle 'none' string specially if it's meant to be None
+            if type_converter == int and isinstance(processed_val, str) and processed_val.lower() == 'none':
                 return None
-            return type_converter(val)
-        except (ValueError, configparser.NoOptionError):
-            logging.warning(f"Invalid value '{val}' for '{key}' in config.ini. Using default: {default}")
+            
+            # Attempt to convert to the target type
+            return type_converter(processed_val)
+        except (ValueError, TypeError):
+            # Log specific warning for non-boolean type conversion issues
+            logging.warning(f"Invalid value '{raw_val}' for '{key}' in config.ini. Using default: {default}")
             return default
 
     parser = argparse.ArgumentParser(description="A hands-free voice assistant for Ollama.")

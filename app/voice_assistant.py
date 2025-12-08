@@ -188,14 +188,11 @@ class VoiceAssistant:
             
             # Check for multiple quality indicators
             if audio_rms < 0.01:
-                logging.warning(f"Audio too quiet (RMS: {audio_rms:.4f})")
-                self.audio.start()
-                return
+                logging.warning(f"Audio too quiet (RMS: {audio_rms:.4f}), proceeding to transcription")
             
             if audio_std < 0.005:
-                logging.warning(f"Audio lacks variation (StdDev: {audio_std:.4f}), likely silence")
-                self.audio.start()
-                return
+                logging.warning(f"Audio lacks variation (StdDev: {audio_std:.4f}), likely silence, proceeding to transcription")
+
             
             # Check if audio is clipping (saturated)
             if audio_peak > 0.98:
@@ -363,59 +360,64 @@ class VoiceAssistant:
         return ""
 
     def _trim_wakeword(self, text: str) -> str:
-        """Intelligently trim wake word from transcription with expanded variants."""
+        """Trims the wake word from the transcription using regex for robustness."""
         wakeword = self.args.wakeword.lower()
         text_lower = text.lower().strip()
+
+        # Generate a list of core wake word names (e.g., "jarvis" from "hey jarvis")
+        # and common misspellings/pronunciations that should be trimmed.
+        # This list should NOT contain partial words that could lead to over-trimming.
+        core_wakeword_names = ["jarvis", "jarlis", "jarvas", "jarves", "jarvys", "jarvois"]
         
-        # Try exact match at start
-        if text_lower.startswith(wakeword):
-            trimmed = text[len(wakeword):].lstrip(' ,.?!').strip()
-            logging.debug(f"Exact wake word match trimmed")
-            return trimmed
+        # Add the exact configured wake word to the patterns, in case it's a multi-word phrase
+        patterns_to_match = [re.escape(wakeword)] # Escape for regex safety
         
-        # IMPROVEMENT: Expanded list of common mishearings
-        common_variants = [
-            "hey jarvis",
-            "a jarvis",
-            "hey jarvas", 
-            "hey jarvs",
-            "a jarvus",
-            "hey drivers",
-            "hey jarves",
-            "hey jarvis,",
-            "hayjarvis",
-            "hey jar",
-            "jarvis",
-            "hey jarvus",
-            "hey jarvi",
-            "hay jarvis",
-            "he jarvis",
-            "heyjarvis",
-            "hey jar vis",
-            "hey jarv",
-            "a jar vis",
-            "hey jarbis",
-            "hey travis",  # Sometimes mishears as travis
-            "hey jarviss",
-            "hey jarve",
-        ]
+        # Add patterns for common prefixes/suffixes around the core names
+        for name in core_wakeword_names:
+            patterns_to_match.append(r"(?:hey\s*)?" + re.escape(name)) # Optional "hey "
+            patterns_to_match.append(re.escape(name)) # Just the name
+
+        # Create a single regex pattern to match any of these at the start or end,
+        # with optional punctuation and spaces. Use word boundaries where appropriate.
+        # This regex will look for the pattern either at the beginning (^) or the end ($)
+        # of the string, allowing for flexible matching.
         
-        for variant in common_variants:
-            if text_lower.startswith(variant):
-                trimmed = text[len(variant):].lstrip(' ,.?!').strip()
-                logging.debug(f"Fuzzy wake word match ('{variant}') trimmed")
-                return trimmed
+        # Example: if wakeword is "hey jarvis"
+        # patterns_to_match could be: ["hey\\s*jarvis", "hey\\s*jarlis", ..., "jarvis", "jarlis", ...]
         
-        # Check if wake word appears mid-sentence
-        for variant in [wakeword, "jarvis"]:
-            if variant in text_lower:
-                idx = text_lower.index(variant)
-                if idx < 20:  # Only trim if wake word is near the start
-                    trimmed = text[idx + len(variant):].lstrip(' ,.?!').strip()
-                    if trimmed:
-                        logging.debug(f"Wake word found at position {idx}, trimmed")
-                        return trimmed
+        # Construct the full regex:
+        # 1. Match at the beginning: (?:<pattern>)\b[.,!?]*\s*
+        # 2. Match at the end: \s*\b(?:<pattern>)[.,!?]*$
         
+        # To avoid over-trimming, ensure word boundaries (\b) are used where logical.
+        # Also, make sure the most specific patterns are tried first if using an OR separated list.
+        
+        # For simplicity and to avoid complex lookarounds, we'll try to find the longest match first
+        # and then trim. A single regex can be structured to capture the matched wake word part.
+        
+        # Let's build a regex that captures the wake word part we want to remove.
+        # We need to ensure we don't accidentally trim valid speech that happens to contain
+        # a wake word component.
+        
+        # Pattern for matching at the beginning (case-insensitive)
+        # e.g., "hey jarvis, what time" -> "what time"
+        # (?:^|\s) ensures we match at the start or after a space, \b for word boundary
+        combined_start_pattern = r"^(?:" + "|".join(patterns_to_match) + r")\b[.,!?]*\s*"
+        match_start = re.match(combined_start_pattern, text_lower, re.IGNORECASE)
+        if match_start:
+            trimmed_text = text[len(match_start.group(0)):].strip()
+            logging.debug(f"Wake word trimmed from start: '{match_start.group(0)}' removed. Result: '{trimmed_text}'")
+            return trimmed_text
+            
+        # Pattern for matching at the end (case-insensitive)
+        # e.g., "what time hey jarvis" -> "what time"
+        combined_end_pattern = r"\s*\b(?:" + "|".join(patterns_to_match) + r")[.,!?]*$"
+        match_end = re.search(combined_end_pattern, text_lower, re.IGNORECASE)
+        if match_end:
+            trimmed_text = text[:match_end.start()].strip()
+            logging.debug(f"Wake word trimmed from end: '{match_end.group(0)}' removed. Result: '{trimmed_text}'")
+            return trimmed_text
+
         logging.debug("No wake word pattern found, keeping original text")
         return text
 
