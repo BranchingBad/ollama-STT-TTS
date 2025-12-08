@@ -45,7 +45,7 @@ class Transcriber:
         for segment in segments:
             # The log probability is a negative number, so a higher value (closer to 0) is better.
             # no_speech_prob is the probability of the segment being silence, so lower is better.
-            if segment.avg_logprob > -1.0 and segment.no_speech_prob < 0.6:
+            if segment.avg_logprob > self.args.whisper_avg_logprob and segment.no_speech_prob < self.args.whisper_no_speech_prob:
                 transcription.append(segment.text)
             else:
                 logging.debug(f"Segment discarded: avg_logprob={segment.avg_logprob:.2f}, no_speech_prob={segment.no_speech_prob:.2f}, text='{segment.text.strip()}'")

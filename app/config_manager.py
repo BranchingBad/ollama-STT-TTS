@@ -174,8 +174,11 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--max-words-per-command', type=int, help="Maximum words allowed in a command.")
     func_group.add_argument('--whisper-device', type=str, help="Device for Whisper (e.g., 'cpu', 'cuda').")
     func_group.add_argument('--whisper-compute-type', type=str, help="Compute type for Whisper (e.g., 'int8').")
+    func_group.add_argument('--whisper-avg-logprob', type=float, help="Whisper avg_logprob threshold.")
+    func_group.add_argument('--whisper-no-speech-prob', type=float, help="Whisper no_speech_prob threshold.")
     func_group.add_argument('--max-history-tokens', type=int, help="Maximum token context for chat history.")
     func_group.add_argument('--audio-buffer-size', type=int, help="Size of the audio buffer queue.")
+    func_group.add_argument('--trim-wake-word', action='store_true', help="Enable trimming the wake word from the start of transcription.")
 
     perf_group = parser.add_argument_group('Performance')
     perf_group.add_argument('--gc-interval', type=int, help="Force garbage collection every N conversations.")
@@ -200,8 +203,11 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
         whisper_device=get_config_val(config_func, 'whisper_device', DEFAULT_SETTINGS['whisper_device'], str),
         whisper_compute_type=get_config_val(config_func, 'whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type'], str),
+        whisper_avg_logprob=get_config_val(config_func, 'whisper_avg_logprob', DEFAULT_SETTINGS['whisper_avg_logprob'], float),
+        whisper_no_speech_prob=get_config_val(config_func, 'whisper_no_speech_prob', DEFAULT_SETTINGS['whisper_no_speech_prob'], float),
         max_history_tokens=get_config_val(config_func, 'max_history_tokens', DEFAULT_SETTINGS['max_history_tokens'], int),
         audio_buffer_size=get_config_val(config_func, 'audio_buffer_size', DEFAULT_SETTINGS['audio_buffer_size'], int),
+        trim_wake_word=get_config_val(config_func, 'trim_wake_word', DEFAULT_SETTINGS['trim_wake_word'], bool),
         gc_interval=get_config_val(config_perf, 'gc_interval', DEFAULT_SETTINGS['gc_interval'], int),
         memory_profiling=get_config_val(config_perf, 'memory_profiling', DEFAULT_SETTINGS['memory_profiling'], bool)
     )

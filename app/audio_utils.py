@@ -35,10 +35,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'max_words_per_command': 60,
     'whisper_device': 'cpu',
     'whisper_compute_type': 'int8',
+    'whisper_avg_logprob': -1.0,
+    'whisper_no_speech_prob': 0.6,
     'max_history_tokens': 2048,
     'audio_buffer_size': DEFAULT_AUDIO_BUFFER_SIZE,  # FIX #2: Added buffer size config
     'gc_interval': 10,
     'memory_profiling': False,
+    'trim_wake_word': True,
 }       
 
 # --- 3. Audio Helpers (Updated for sounddevice) ---

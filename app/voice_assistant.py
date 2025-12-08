@@ -51,7 +51,7 @@ class VoiceAssistant:
                     logging.info("Wakeword detected!")
                     self.oww_model.reset()
                     self._handle_conversation()
-                    logging.info(f"\nReady! Listening for '{self.args.wakeword}'...")
+                    logging.info(f"Ready! Listening for '{self.args.wakeword}'...")
 
         except KeyboardInterrupt:
             logging.info("Stopping...")
@@ -83,14 +83,28 @@ class VoiceAssistant:
 
         # Transcribe
         user_text = self.transcriber.transcribe(audio_np)
-        logging.info(f"You: {user_text}")
         
         # Explicitly release audio data from memory
         del audio_np
         
-        if not user_text.strip():
+        if not user_text or not user_text.strip():
             self.audio.start() # Ensure we start listening again before exiting
             return
+
+        # Trim wake word if enabled
+        if self.args.trim_wake_word:
+            wakeword = self.args.wakeword.lower()
+            user_text_stripped = user_text.strip()
+            if user_text_stripped.lower().startswith(wakeword):
+                # Trim the wake word and any following punctuation/space
+                user_text = user_text_stripped[len(wakeword):].lstrip(' ,.').strip()
+
+        # If the command is now empty, do nothing
+        if not user_text:
+            self.audio.start()
+            return
+
+        logging.info(f"You: {user_text}")
 
         # Check for exit commands
         if "exit" in user_text.lower() or "goodbye" in user_text.lower():

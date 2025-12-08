@@ -10,6 +10,13 @@ Loads configuration, initializes, and runs the VoiceAssistant class.
 import logging
 import sys
 import tracemalloc
+import warnings
+
+# Suppress the specific onnxruntime UserWarning
+warnings.filterwarnings("ignore", message="Specified provider 'CUDAExecutionProvider' is not in available provider names.")
+# Suppress the pkg_resources deprecation warning from webrtcvad
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
+
 
 # --- IMPROVEMENT: Top-Level Dependency Check ---
 # Encapsulate critical imports to provide clear error messages if dependencies are missing.
@@ -47,6 +54,12 @@ def main() -> None:
         sys.exit(1)
 
     args, _, should_exit = load_config_and_args()
+
+    # --- Log key settings ---
+    logging.info(f"Using Ollama model: {args.ollama_model}")
+    logging.info(f"Using Whisper model: {args.whisper_model} on {args.whisper_device}")
+    logging.info(f"Trim wake word from transcription: {'Enabled' if args.trim_wake_word else 'Disabled'}")
+    # ---
 
     # Optional detailed memory tracing
     if args.debug:

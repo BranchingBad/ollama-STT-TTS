@@ -26,6 +26,9 @@ whisper_compute_type = float16
 # and the 'cuda' + 'float16' settings below.
 # whisper_model = large-v2
 # --- End Faster Model ---
+whisper_avg_logprob = -1.0
+whisper_no_speech_prob = 0.6
 
 max_history_tokens = 4096 
 # Increased history token limit: A faster computer can handle a larger context size.
+trim_wake_word = true
