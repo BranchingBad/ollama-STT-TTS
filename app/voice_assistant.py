@@ -130,8 +130,6 @@ class VoiceAssistant:
             logging.info("Stopping...")
         self.cleanup()
 
-        self.is_handling_conversation = False
-
     def _process_plugins(self, text: str) -> str:
         """Processes simple plugins like [current time]."""
         if "[current time]" in text.lower():
@@ -236,14 +234,15 @@ class VoiceAssistant:
             sentences = re.split(r'(?<=[.?!])\s+', user_text)
             if sentences:
                 first_sentence = sentences[0]
-                            if first_sentence != user_text:
-                                logging.debug(f"Using first sentence only: '{first_sentence}'")
-                                user_text = first_sentence
-                
-                        # Process any plugins
-                        user_text = self._process_plugins(user_text)
-                
-                        logging.info(f"You: {user_text}")    
+                if first_sentence != user_text:
+                    logging.debug(f"Using first sentence only: '{first_sentence}'")
+                    user_text = first_sentence
+
+            # Process any plugins
+            user_text = self._process_plugins(user_text)
+
+            logging.info(f"You: {user_text}")
+
             # Check for exit commands
             user_text_lower = user_text.lower()
             if "exit" in user_text_lower or "goodbye" in user_text_lower:
