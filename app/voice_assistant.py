@@ -19,6 +19,7 @@ class VoiceAssistant:
         self.args = args
         self.interrupt_event = threading.Event()
         self.conversation_count = 0
+        self.is_handling_conversation = False
         
         # Wake word detection improvements
         self.last_wakeword_time = 0
@@ -50,9 +51,14 @@ class VoiceAssistant:
         
         # Track wake word scores for debugging
         score_history = []
+        # Track time-weighted moving average for more stable detection
+        weighted_scores = []
         
         try:
             while True:
+                if self.is_handling_conversation:
+                    time.sleep(0.01)
+                    continue
                 # 1. Get audio for Wakeword Detection
                 chunk = self.audio.get_chunk()
                 if not chunk:
@@ -71,6 +77,14 @@ class VoiceAssistant:
                 
                 current_time = time.time()
                 
+                # IMPROVEMENT: Add score to weighted history (last 5 scores)
+                weighted_scores.append(score)
+                if len(weighted_scores) > 5:
+                    weighted_scores.pop(0)
+                
+                # Calculate moving average for more stable detection
+                avg_score = sum(weighted_scores) / len(weighted_scores)
+                
                 # Enhanced wake word detection
                 if score > self.args.wakeword_threshold:
                     # Check cooldown period to prevent rapid re-triggers
@@ -79,18 +93,24 @@ class VoiceAssistant:
                         self.consecutive_detection_count += 1
                         
                         logging.debug(f"Wakeword candidate detected (score: {score:.2f}, "
+                                    f"avg: {avg_score:.2f}, "
                                     f"consecutive: {self.consecutive_detection_count}/{self.required_consecutive})")
                         
-                        # Trigger after required consecutive detections
-                        if self.consecutive_detection_count >= self.required_consecutive:
+                        # IMPROVEMENT: Require both high instant score AND good average
+                        if (self.consecutive_detection_count >= self.required_consecutive and 
+                            avg_score > self.args.wakeword_threshold * 0.85):
+                            
                             # Log recent score history
                             recent_scores = [f"{s:.2f}" for s in score_history[-10:]]
-                            logging.info(f"Wakeword detected! (score: {score:.2f}, recent: {', '.join(recent_scores)})")
+                            logging.info(f"Wakeword detected! (score: {score:.2f}, avg: {avg_score:.2f}, "
+                                       f"recent: {', '.join(recent_scores)})")
                             
                             self.last_wakeword_time = current_time
                             self.consecutive_detection_count = 0
+                            weighted_scores.clear()
                             self.oww_model.reset()
                             
+                            self.is_handling_conversation = True
                             self._handle_conversation()
                             
                             # Clear score history after conversation
@@ -110,194 +130,231 @@ class VoiceAssistant:
             logging.info("Stopping...")
         self.cleanup()
 
+        self.is_handling_conversation = False
+
+    def _process_plugins(self, text: str) -> str:
+        """Processes simple plugins like [current time]."""
+        if "[current time]" in text.lower():
+            current_time = time.strftime("%I:%M %p")
+            logging.debug(f"Plugin found: [current time] -> {current_time}")
+            # Use regex for case-insensitive replacement
+            text = re.sub(r'\[current time\]', current_time, text, flags=re.IGNORECASE)
+        return text
+
     def _handle_conversation(self):
-        conversation_start = time.time()
-        
-        # Optional memory profiling
-        mem_before = 0
-        if self.args.debug and self.args.memory_profiling:
-            mem_before = monitor_memory()
-            logging.debug(f"Memory at conversation start: {mem_before:.2f} MB")
-
-        self.audio.stop()
-        self.audio.clear_buffer()
-        
-        logging.debug("Playing acknowledgment")
-        self.tts.speak("Yes?")
-        self.tts.queue.join()
-        
-        self.interrupt_event.clear()
-        
-        # Start listening for command
-        logging.debug("Starting audio recording for command")
-        self.audio.start()
-        
-        # Longer delay to allow TTS audio to fade completely
-        time.sleep(0.3)
-        
-        recording_start = time.time()
-        audio_np = self.audio.record_phrase(self.interrupt_event, self.args.listen_timeout)
-        recording_duration = time.time() - recording_start
-        
-        # Stop listening and process
-        self.audio.stop()
-        
-        if audio_np is None:
-            logging.debug(f"No audio recorded (recording took {recording_duration:.2f}s)")
-            self.audio.start()
-            return
-
-        logging.debug(f"Audio recording completed in {recording_duration:.2f}s")
-
-        # Validate audio quality before transcription
-        audio_rms = np.sqrt(np.mean(audio_np**2))
-        audio_peak = np.max(np.abs(audio_np))
-        logging.debug(f"Audio quality check - RMS: {audio_rms:.4f}, Peak: {audio_peak:.4f}")
-        
-        if audio_rms < 0.005:  # Very quiet threshold
-            logging.warning(f"Audio too quiet (RMS: {audio_rms:.4f}), likely silence")
-            self.audio.start()
-            return
-
-        # Transcribe with retry logic
-        transcription_start = time.time()
-        user_text = self._transcribe_with_retry(audio_np)
-        transcription_duration = time.time() - transcription_start
-        
-        logging.debug(f"Transcription completed in {transcription_duration:.2f}s")
-        
-        # Explicitly release audio data from memory
-        del audio_np
-        
-        if not user_text or not user_text.strip():
-            logging.debug("Transcription was empty or whitespace only")
-            self.audio.start()
-            return
-
-        # Trim wake word if enabled
-        original_text = user_text
-        if self.args.trim_wake_word:
-            user_text = self._trim_wakeword(user_text)
-            if user_text != original_text:
-                logging.debug(f"Wake word trimmed: '{original_text}' -> '{user_text}'")
-
-        # If the command is now empty, do nothing
-        if not user_text or not user_text.strip():
-            logging.debug("Command empty after wake word trimming")
-            self.audio.start()
-            return
-
-        # Take only the first sentence
-        sentences = re.split(r'(?<=[.?!])\s+', user_text)
-        if sentences:
-            first_sentence = sentences[0]
-            if first_sentence != user_text:
-                logging.debug(f"Using first sentence only: '{first_sentence}'")
-                user_text = first_sentence
-
-        logging.info(f"You: {user_text}")
-
-        # Check for exit commands
-        user_text_lower = user_text.lower()
-        if "exit" in user_text_lower or "goodbye" in user_text_lower:
-            logging.debug("Exit command detected")
-            self.tts.speak("Goodbye.")
+        try:
+            conversation_start = time.time()
+            
+            # Optional memory profiling
+            mem_before = 0
+            if self.args.debug and self.args.memory_profiling:
+                mem_before = monitor_memory()
+                logging.debug(f"Memory at conversation start: {mem_before:.2f} MB")
+    
+            self.audio.stop()
+            self.audio.clear_buffer()
+            
+            logging.debug("Playing acknowledgment")
+            self.tts.speak("Yes?")
             self.tts.queue.join()
-            exit(0)
-
-        # Check for history reset commands
-        if "new chat" in user_text_lower or "reset chat" in user_text_lower:
-            logging.debug("Chat reset command detected")
-            self.llm.reset_history()
-            self.tts.speak("Chat history cleared.")
-            self.tts.queue.join()
+            
+            self.interrupt_event.clear()
+            
+            # Start listening for command
+            logging.debug("Starting audio recording for command")
             self.audio.start()
-            return
-
-        # Get LLM Response & Speak
-        logging.debug("Sending to LLM")
-        llm_start = time.time()
-        sentence_buffer = ""
-        token_count = 0
-        
-        for token in self.llm.chat_stream(user_text):
-            if token is None: 
-                logging.error("LLM returned None token")
-                break
-            if self.interrupt_event.is_set():
-                logging.debug("Conversation interrupted")
-                self.tts.clear_queue()
-                break
             
-            token_count += 1
-            sentence_buffer += token
+            # Longer delay to allow TTS audio to fade completely
+            time.sleep(0.4)
             
-            # Stream sentences to TTS
-            if any(p in token for p in SENTENCE_END_PUNCTUATION):
-                sentence = sentence_buffer.strip()
-                if sentence:
-                    logging.debug(f"Queuing sentence for TTS: '{sentence[:50]}...'")
-                    self.tts.speak(sentence)
-                sentence_buffer = ""
-        
-        llm_duration = time.time() - llm_start
-        logging.debug(f"LLM streaming completed in {llm_duration:.2f}s ({token_count} tokens)")
-        
-        # Speak remaining buffer
-        if sentence_buffer.strip() and not self.interrupt_event.is_set():
-            logging.debug(f"Queuing final buffer for TTS: '{sentence_buffer.strip()}'")
-            self.tts.speak(sentence_buffer.strip())
-        
-        logging.debug("Waiting for TTS to complete")
-        self.tts.queue.join()
-        
-        # After conversation completes
-        self.conversation_count += 1
-        conversation_duration = time.time() - conversation_start
-        
-        logging.debug(f"Conversation #{self.conversation_count} completed in {conversation_duration:.2f}s")
-        
-        # Periodic aggressive cleanup
-        if self.args.gc_interval > 0 and self.conversation_count % self.args.gc_interval == 0:
-            gc.collect()
-            logging.debug(f"Periodic garbage collection triggered (every {self.args.gc_interval} conversations)")
-
-        # Optional memory profiling
-        if self.args.debug and self.args.memory_profiling and mem_before > 0:
-            mem_after = monitor_memory()
-            mem_delta = mem_after - mem_before
-            logging.debug(f"Memory at conversation end: {mem_after:.2f} MB (delta: {mem_delta:+.2f} MB)")
+            recording_start = time.time()
+            audio_np = self.audio.record_phrase(self.interrupt_event, self.args.listen_timeout)
+            recording_duration = time.time() - recording_start
             
-        self.audio.start()
+            # Stop listening and process
+            self.audio.stop()
+            
+            if audio_np is None:
+                logging.debug(f"No audio recorded (recording took {recording_duration:.2f}s)")
+                self.audio.start()
+                return
+    
+            logging.debug(f"Audio recording completed in {recording_duration:.2f}s")
+    
+            # IMPROVEMENT: More sophisticated audio quality validation
+            audio_rms = np.sqrt(np.mean(audio_np**2))
+            audio_peak = np.max(np.abs(audio_np))
+            audio_std = np.std(audio_np)
+            
+            logging.debug(f"Audio quality - RMS: {audio_rms:.4f}, Peak: {audio_peak:.4f}, StdDev: {audio_std:.4f}")
+            
+            # Check for multiple quality indicators
+            if audio_rms < 0.01:
+                logging.warning(f"Audio too quiet (RMS: {audio_rms:.4f})")
+                self.audio.start()
+                return
+            
+            if audio_std < 0.005:
+                logging.warning(f"Audio lacks variation (StdDev: {audio_std:.4f}), likely silence")
+                self.audio.start()
+                return
+            
+            # Check if audio is clipping (saturated)
+            if audio_peak > 0.98:
+                logging.warning(f"Audio may be clipping (Peak: {audio_peak:.4f})")
+                # Don't return - just warn, as clipped audio can still be transcribed
+    
+            # Transcribe with retry logic
+            transcription_start = time.time()
+            user_text = self._transcribe_with_retry(audio_np)
+            transcription_duration = time.time() - transcription_start
+            
+            logging.debug(f"Transcription completed in {transcription_duration:.2f}s")
+            
+            # Explicitly release audio data from memory
+            del audio_np
+            
+            if not user_text or not user_text.strip():
+                logging.debug("Transcription was empty or whitespace only")
+                self.audio.start()
+                return
+    
+            # Trim wake word if enabled
+            original_text = user_text
+            if self.args.trim_wake_word:
+                user_text = self._trim_wakeword(user_text)
+                if user_text != original_text:
+                    logging.debug(f"Wake word trimmed: '{original_text}' -> '{user_text}'")
+    
+            # If the command is now empty, do nothing
+            if not user_text or not user_text.strip():
+                logging.debug("Command empty after wake word trimming")
+                self.audio.start()
+                return
+    
+            # Take only the first sentence
+            sentences = re.split(r'(?<=[.?!])\s+', user_text)
+            if sentences:
+                first_sentence = sentences[0]
+                            if first_sentence != user_text:
+                                logging.debug(f"Using first sentence only: '{first_sentence}'")
+                                user_text = first_sentence
+                
+                        # Process any plugins
+                        user_text = self._process_plugins(user_text)
+                
+                        logging.info(f"You: {user_text}")    
+            # Check for exit commands
+            user_text_lower = user_text.lower()
+            if "exit" in user_text_lower or "goodbye" in user_text_lower:
+                logging.debug("Exit command detected")
+                self.tts.speak("Goodbye.")
+                self.tts.queue.join()
+                exit(0)
+    
+            # Check for history reset commands
+            if "new chat" in user_text_lower or "reset chat" in user_text_lower:
+                logging.debug("Chat reset command detected")
+                self.llm.reset_history()
+                self.tts.speak("Chat history cleared.")
+                self.tts.queue.join()
+                self.audio.start()
+                return
+    
+            # Get LLM Response & Speak
+            logging.debug("Sending to LLM")
+            llm_start = time.time()
+            sentence_buffer = ""
+            token_count = 0
+            
+            for token in self.llm.chat_stream(user_text):
+                if token is None: 
+                    logging.error("LLM returned None token")
+                    break
+                if self.interrupt_event.is_set():
+                    logging.debug("Conversation interrupted")
+                    self.tts.clear_queue()
+                    break
+                
+                token_count += 1
+                sentence_buffer += token
+                
+                # Stream sentences to TTS
+                if any(p in token for p in SENTENCE_END_PUNCTUATION):
+                    sentence = sentence_buffer.strip()
+                    if sentence:
+                        logging.debug(f"Queuing sentence for TTS: '{sentence[:50]}...'")
+                        self.tts.speak(sentence)
+                    sentence_buffer = ""
+            
+            llm_duration = time.time() - llm_start
+            logging.debug(f"LLM streaming completed in {llm_duration:.2f}s ({token_count} tokens)")
+            
+            # Speak remaining buffer
+            if sentence_buffer.strip() and not self.interrupt_event.is_set():
+                logging.debug(f"Queuing final buffer for TTS: '{sentence_buffer.strip()}'")
+                self.tts.speak(sentence_buffer.strip())
+            
+            logging.debug("Waiting for TTS to complete")
+            self.tts.queue.join()
+            
+            # After conversation completes
+            self.conversation_count += 1
+            conversation_duration = time.time() - conversation_start
+            
+            logging.debug(f"Conversation #{self.conversation_count} completed in {conversation_duration:.2f}s")
+            
+            # Periodic aggressive cleanup
+            if self.args.gc_interval > 0 and self.conversation_count % self.args.gc_interval == 0:
+                gc.collect()
+                logging.debug(f"Periodic garbage collection triggered (every {self.args.gc_interval} conversations)")
+    
+            # Optional memory profiling
+            if self.args.debug and self.args.memory_profiling and mem_before > 0:
+                mem_after = monitor_memory()
+                mem_delta = mem_after - mem_before
+                logging.debug(f"Memory at conversation end: {mem_after:.2f} MB (delta: {mem_delta:+.2f} MB)")
+                
+            self.audio.start()
+        finally:
+            self.is_handling_conversation = False
 
-    def _transcribe_with_retry(self, audio_np: np.ndarray, max_retries: int = 2) -> str:
-        """Transcribe with retry logic and progressive threshold relaxation."""
+    def _transcribe_with_retry(self, audio_np: np.ndarray, max_retries: int = 3) -> str:
+        """Transcribe with progressive threshold relaxation and better logging."""
         original_logprob = self.args.whisper_avg_logprob
         original_nospeech = self.args.whisper_no_speech_prob
         
-        logging.debug(f"Starting transcription (thresholds: logprob={original_logprob}, "
+        # Define threshold progression
+        threshold_steps = [
+            (original_logprob, original_nospeech),
+            (original_logprob - 0.15, original_nospeech + 0.1),
+            (original_logprob - 0.3, original_nospeech + 0.2),
+        ]
+        
+        logging.debug(f"Starting transcription (initial thresholds: logprob={original_logprob}, "
                      f"no_speech={original_nospeech})")
         
-        for attempt in range(max_retries):
-            logging.debug(f"Transcription attempt {attempt + 1}/{max_retries}")
+        for attempt in range(min(max_retries, len(threshold_steps))):
+            logprob_threshold, nospeech_threshold = threshold_steps[attempt]
+            
+            # Update thresholds
+            self.args.whisper_avg_logprob = logprob_threshold
+            self.args.whisper_no_speech_prob = nospeech_threshold
+            
+            logging.debug(f"Transcription attempt {attempt + 1}/{max_retries} "
+                         f"(logprob={logprob_threshold:.2f}, no_speech={nospeech_threshold:.2f})")
             
             user_text = self.transcriber.transcribe(audio_np)
             
             if user_text and user_text.strip():
-                # Success!
                 logging.debug(f"Transcription successful on attempt {attempt + 1}: '{user_text}'")
                 # Restore original thresholds
                 self.args.whisper_avg_logprob = original_logprob
                 self.args.whisper_no_speech_prob = original_nospeech
                 return user_text
             
-            # On retry, relax thresholds slightly
             if attempt < max_retries - 1:
-                self.args.whisper_avg_logprob -= 0.2
-                self.args.whisper_no_speech_prob += 0.15
-                logging.debug(f"Transcription attempt {attempt + 1} failed, relaxing thresholds to "
-                            f"logprob={self.args.whisper_avg_logprob}, "
-                            f"no_speech={self.args.whisper_no_speech_prob}")
+                logging.debug(f"Attempt {attempt + 1} failed, trying with relaxed thresholds")
         
         # Restore original thresholds
         self.args.whisper_avg_logprob = original_logprob
@@ -307,7 +364,7 @@ class VoiceAssistant:
         return ""
 
     def _trim_wakeword(self, text: str) -> str:
-        """Intelligently trim wake word from transcription."""
+        """Intelligently trim wake word from transcription with expanded variants."""
         wakeword = self.args.wakeword.lower()
         text_lower = text.lower().strip()
         
@@ -317,19 +374,31 @@ class VoiceAssistant:
             logging.debug(f"Exact wake word match trimmed")
             return trimmed
         
-        # Try fuzzy match for common mishearings
+        # IMPROVEMENT: Expanded list of common mishearings
         common_variants = [
             "hey jarvis",
-            "a jarvis", 
-            "hey jarvas",
+            "a jarvis",
+            "hey jarvas", 
             "hey jarvs",
             "a jarvus",
-            "hey drivers",  # Common mishearing
+            "hey drivers",
             "hey jarves",
             "hey jarvis,",
             "hayjarvis",
             "hey jar",
-            "jarvis"  # Sometimes just the name
+            "jarvis",
+            "hey jarvus",
+            "hey jarvi",
+            "hay jarvis",
+            "he jarvis",
+            "heyjarvis",
+            "hey jar vis",
+            "hey jarv",
+            "a jar vis",
+            "hey jarbis",
+            "hey travis",  # Sometimes mishears as travis
+            "hey jarviss",
+            "hey jarve",
         ]
         
         for variant in common_variants:
@@ -338,17 +407,16 @@ class VoiceAssistant:
                 logging.debug(f"Fuzzy wake word match ('{variant}') trimmed")
                 return trimmed
         
-        # Check if wake word appears mid-sentence (sometimes transcribed oddly)
+        # Check if wake word appears mid-sentence
         for variant in [wakeword, "jarvis"]:
-            if variant in text_lower and text_lower.index(variant) < 15:
-                # Wake word appears early in text
+            if variant in text_lower:
                 idx = text_lower.index(variant)
-                trimmed = text[idx + len(variant):].lstrip(' ,.?!').strip()
-                if trimmed:  # Only trim if there's text after
-                    logging.debug(f"Wake word found at position {idx}, trimmed")
-                    return trimmed
+                if idx < 20:  # Only trim if wake word is near the start
+                    trimmed = text[idx + len(variant):].lstrip(' ,.?!').strip()
+                    if trimmed:
+                        logging.debug(f"Wake word found at position {idx}, trimmed")
+                        return trimmed
         
-        # If no match found, return original
         logging.debug("No wake word pattern found, keeping original text")
         return text
 

@@ -168,6 +168,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--silence-seconds', type=float, help="Seconds of silence to detect end of speech.")
     func_group.add_argument('--listen-timeout', type=float, help="Seconds to wait for speech before timing out.")
     func_group.add_argument('--pre-buffer-ms', type=int, help="Milliseconds of audio to keep before speech starts.")
+    func_group.add_argument('--gain', type=float, help="Input gain to apply to the microphone volume.")
     func_group.add_argument('--system-prompt', type=str, help="The system prompt or a path to a .txt file.")
     func_group.add_argument('--device-index', type=device_index_type, help="Index of the audio input device.")
     func_group.add_argument('--piper-output-device-index', type=device_index_type, help="Index of the audio output device.")
@@ -198,6 +199,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         silence_seconds=get_config_val(config_func, 'silence_seconds', DEFAULT_SETTINGS['silence_seconds'], float),
         listen_timeout=get_config_val(config_func, 'listen_timeout', DEFAULT_SETTINGS['listen_timeout'], float),
         pre_buffer_ms=get_config_val(config_func, 'pre_buffer_ms', DEFAULT_SETTINGS['pre_buffer_ms'], int),
+        gain=get_config_val(config_func, 'gain', DEFAULT_SETTINGS['gain'], float),
         system_prompt=get_config_val(config_func, 'system_prompt', DEFAULT_SETTINGS['system_prompt'], str),
         device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], int),
         piper_output_device_index=get_config_val(config_func, 'piper_output_device_index', DEFAULT_SETTINGS['piper_output_device_index'], int),

@@ -1,273 +1,567 @@
 (venv) steve@slate:~/git-projects/ollama-STT-TTS$ python app/assistant.py --debug
-INFO 2025-12-08 13:11:44,994 - Loaded configuration from /home/steve/git-projects/ollama-STT-TTS/config.ini
-DEBUG 2025-12-08 13:11:44,996 - DEBUG logging enabled.
-INFO 2025-12-08 13:11:44,996 - Using Ollama model: llama3
-INFO 2025-12-08 13:11:44,996 - Using Whisper model: small.en on cpu
-INFO 2025-12-08 13:11:44,996 - Trim wake word from transcription: Enabled
-INFO 2025-12-08 13:11:44,996 - Attempting to connect to Ollama at http://localhost:11434...
-DEBUG 2025-12-08 13:11:45,007 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-08 13:11:45,016 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fe4fbd426c0>
-DEBUG 2025-12-08 13:11:45,017 - send_request_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,017 - send_request_headers.complete
-DEBUG 2025-12-08 13:11:45,017 - send_request_body.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,017 - send_request_body.complete
-DEBUG 2025-12-08 13:11:45,017 - receive_response_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,019 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Mon, 08 Dec 2025 18:11:45 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-08 13:11:45,021 - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
-DEBUG 2025-12-08 13:11:45,022 - receive_response_body.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,022 - receive_response_body.complete
-DEBUG 2025-12-08 13:11:45,022 - response_closed.started
-DEBUG 2025-12-08 13:11:45,023 - response_closed.complete
-INFO 2025-12-08 13:11:45,024 - Ollama server connection successful.
-DEBUG 2025-12-08 13:11:45,024 - VoiceAssistant init - cooldown: 1.0s, required consecutive: 2
-INFO 2025-12-08 13:11:45,024 - Loading faster-whisper model: small.en on device 'cpu'...
-DEBUG 2025-12-08 13:11:45,396 - connect_tcp.started host='huggingface.co' port=443 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-08 13:11:45,582 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fe4f29806b0>
-DEBUG 2025-12-08 13:11:45,583 - start_tls.started ssl_context=<ssl.SSLContext object at 0x7fe4f2976150> server_hostname='huggingface.co' timeout=None
-DEBUG 2025-12-08 13:11:45,600 - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fe4f3105ee0>
-DEBUG 2025-12-08 13:11:45,600 - send_request_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,600 - send_request_headers.complete
-DEBUG 2025-12-08 13:11:45,601 - send_request_body.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,601 - send_request_body.complete
-DEBUG 2025-12-08 13:11:45,601 - receive_response_headers.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,661 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'964'), (b'Connection', b'keep-alive'), (b'Date', b'Mon, 08 Dec 2025 18:11:45 GMT'), (b'ETag', b'W/"3c4-sJJeapDBRUXDDOAtAr3Tfmak3JU"'), (b'X-Powered-By', b'huggingface-moon'), (b'X-Request-Id', b'Root=1-693714e1-2f6f77e74900851d456c214d;d82f63d7-1c24-48f7-91f8-91830f22e837'), (b'RateLimit', b'"api";r=499;t=209'), (b'RateLimit-Policy', b'"fixed window";"api";q=500;w=300'), (b'cross-origin-opener-policy', b'same-origin'), (b'Referrer-Policy', b'strict-origin-when-cross-origin'), (b'Access-Control-Max-Age', b'86400'), (b'Access-Control-Allow-Origin', b'https://huggingface.co'), (b'Vary', b'Origin'), (b'Access-Control-Expose-Headers', b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash'), (b'X-Cache', b'Miss from cloudfront'), (b'Via', b'1.1 d2776ef21d9b55359ce4b9e261e60fe8.cloudfront.net (CloudFront)'), (b'X-Amz-Cf-Pop', b'YUL62-P3'), (b'X-Amz-Cf-Id', b'1vagZr3rnJWt6guxzD-v78-4FwPEjYNx3kvcy5E52n_drqPzZpxEew==')])
-INFO 2025-12-08 13:11:45,662 - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-small.en/revision/main "HTTP/1.1 200 OK"
-DEBUG 2025-12-08 13:11:45,662 - receive_response_body.started request=<Request [b'GET']>
-DEBUG 2025-12-08 13:11:45,663 - receive_response_body.complete
-DEBUG 2025-12-08 13:11:45,663 - response_closed.started
-DEBUG 2025-12-08 13:11:45,663 - response_closed.complete
-DEBUG 2025-12-08 13:11:46,525 - Whisper model loaded successfully
-INFO 2025-12-08 13:11:46,525 - Initializing Piper TTS...
-INFO 2025-12-08 13:11:47,222 - Loaded Piper voice. Rate: 22050Hz
-DEBUG 2025-12-08 13:11:47,222 - Loading wakeword model from: /home/steve/git-projects/ollama-STT-TTS/models/jarvis_v2.onnx
-DEBUG 2025-12-08 13:11:47,475 - Wakeword model loaded with key: jarvis_v2
-INFO 2025-12-08 13:11:47,475 - Ready! Listening for 'hey jarvis'...
-DEBUG 2025-12-08 13:11:47,494 - Audio stream started.
-DEBUG 2025-12-08 13:11:50,391 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
-DEBUG 2025-12-08 13:11:50,431 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
-INFO 2025-12-08 13:11:50,432 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.00)
-DEBUG 2025-12-08 13:11:50,475 - Playing acknowledgment
-DEBUG 2025-12-08 13:11:51,208 - Starting audio recording for command
-DEBUG 2025-12-08 13:11:51,221 - Audio stream started.
-DEBUG 2025-12-08 13:11:51,562 - Speech started, using 0 pre-buffer chunks
-DEBUG 2025-12-08 13:12:06,580 - Max phrase duration of 15.0s exceeded. Forcing stop.
-DEBUG 2025-12-08 13:12:06,625 - Audio recording completed in 15.06s
-DEBUG 2025-12-08 13:12:06,626 - Audio quality check - RMS: 0.0981, Peak: 1.0000
-DEBUG 2025-12-08 13:12:06,626 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
-DEBUG 2025-12-08 13:12:06,626 - Transcription attempt 1/2
-DEBUG 2025-12-08 13:12:06,626 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
-INFO 2025-12-08 13:12:06,626 - Processing audio with duration 00:15.030
-DEBUG 2025-12-08 13:12:06,647 - Transcription info - language: en, language_probability: 1.00
-DEBUG 2025-12-08 13:12:06,653 - Processing segment at 00:00.000
-DEBUG 2025-12-08 13:12:10,852 - Segment 1: [0.00s-7.00s] avg_logprob=-0.345, no_speech_prob=0.007, text='What time is it?'
-DEBUG 2025-12-08 13:12:10,852 -   ✓ Segment accepted
-DEBUG 2025-12-08 13:12:10,853 - Transcription result: 'What time is it?' (1/1 segments used)
-DEBUG 2025-12-08 13:12:10,853 - Transcription successful on attempt 1: 'What time is it?'
-DEBUG 2025-12-08 13:12:10,854 - Transcription completed in 4.23s
-DEBUG 2025-12-08 13:12:10,854 - No wake word pattern found, keeping original text
-INFO 2025-12-08 13:12:10,855 - You: What time is it?
-DEBUG 2025-12-08 13:12:10,855 - Sending to LLM
-DEBUG 2025-12-08 13:12:10,858 - close.started
-DEBUG 2025-12-08 13:12:10,858 - close.complete
-DEBUG 2025-12-08 13:12:10,858 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-08 13:12:10,859 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fe4f2983c50>
-DEBUG 2025-12-08 13:12:10,860 - send_request_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:10,860 - send_request_headers.complete
-DEBUG 2025-12-08 13:12:10,861 - send_request_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:10,861 - send_request_body.complete
-DEBUG 2025-12-08 13:12:10,861 - receive_response_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:15,275 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 18:12:15 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-08 13:12:15,276 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-DEBUG 2025-12-08 13:12:15,276 - receive_response_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:18,377 - Queuing sentence for TTS: 'Time to wake up and smell the coffee!...'
-DEBUG 2025-12-08 13:12:22,193 - receive_response_body.complete
-DEBUG 2025-12-08 13:12:22,193 - response_closed.started
-DEBUG 2025-12-08 13:12:22,193 - response_closed.complete
-DEBUG 2025-12-08 13:12:22,193 - LLM streaming completed in 11.34s (17 tokens)
-DEBUG 2025-12-08 13:12:22,194 - Queuing final buffer for TTS: '(check your device's clock)'
-DEBUG 2025-12-08 13:12:22,194 - Waiting for TTS to complete
-DEBUG 2025-12-08 13:12:23,697 - Conversation #1 completed in 33.27s
-DEBUG 2025-12-08 13:12:23,712 - Audio stream started.
-INFO 2025-12-08 13:12:23,712 - Ready! Listening for 'hey jarvis'...
-DEBUG 2025-12-08 13:12:23,849 - Wakeword candidate detected (score: 0.72, consecutive: 1/2)
-DEBUG 2025-12-08 13:12:23,888 - Wakeword candidate detected (score: 0.72, consecutive: 2/2)
-INFO 2025-12-08 13:12:23,888 - Wakeword detected! (score: 0.72, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.72, 0.72)
-DEBUG 2025-12-08 13:12:23,939 - Playing acknowledgment
-DEBUG 2025-12-08 13:12:24,656 - Starting audio recording for command
-DEBUG 2025-12-08 13:12:24,666 - Audio stream started.
-DEBUG 2025-12-08 13:12:24,997 - Speech started, using 0 pre-buffer chunks
-DEBUG 2025-12-08 13:12:40,016 - Max phrase duration of 15.0s exceeded. Forcing stop.
-DEBUG 2025-12-08 13:12:40,061 - Audio recording completed in 15.05s
-DEBUG 2025-12-08 13:12:40,062 - Audio quality check - RMS: 0.1310, Peak: 1.0000
-DEBUG 2025-12-08 13:12:40,062 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
-DEBUG 2025-12-08 13:12:40,062 - Transcription attempt 1/2
-DEBUG 2025-12-08 13:12:40,062 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
-INFO 2025-12-08 13:12:40,063 - Processing audio with duration 00:15.030
-DEBUG 2025-12-08 13:12:40,079 - Transcription info - language: en, language_probability: 1.00
-DEBUG 2025-12-08 13:12:40,080 - Processing segment at 00:00.000
-DEBUG 2025-12-08 13:12:42,972 - Segment 1: [0.00s-8.64s] avg_logprob=-0.473, no_speech_prob=0.085, text='Hey Jarvis, where are you?'
-DEBUG 2025-12-08 13:12:42,972 -   ✓ Segment accepted
-DEBUG 2025-12-08 13:12:42,972 - Transcription result: 'Hey Jarvis, where are you?' (1/1 segments used)
-DEBUG 2025-12-08 13:12:42,973 - Transcription successful on attempt 1: 'Hey Jarvis, where are you?'
-DEBUG 2025-12-08 13:12:42,973 - Transcription completed in 2.91s
-DEBUG 2025-12-08 13:12:42,973 - Exact wake word match trimmed
-DEBUG 2025-12-08 13:12:42,973 - Wake word trimmed: 'Hey Jarvis, where are you?' -> 'where are you?'
-INFO 2025-12-08 13:12:42,973 - You: where are you?
-DEBUG 2025-12-08 13:12:42,973 - Sending to LLM
-DEBUG 2025-12-08 13:12:42,975 - close.started
-DEBUG 2025-12-08 13:12:42,975 - close.complete
-DEBUG 2025-12-08 13:12:42,976 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-08 13:12:42,977 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fe4f2983d40>
-DEBUG 2025-12-08 13:12:42,977 - send_request_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:42,977 - send_request_headers.complete
-DEBUG 2025-12-08 13:12:42,978 - send_request_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:42,978 - send_request_body.complete
-DEBUG 2025-12-08 13:12:42,978 - receive_response_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:48,690 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 18:12:48 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-08 13:12:48,691 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-DEBUG 2025-12-08 13:12:48,691 - receive_response_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:12:50,805 - Queuing sentence for TTS: 'In your ear, naturally!...'
-DEBUG 2025-12-08 13:12:51,254 - receive_response_body.complete
-DEBUG 2025-12-08 13:12:51,254 - response_closed.started
-DEBUG 2025-12-08 13:12:51,254 - response_closed.complete
-DEBUG 2025-12-08 13:12:51,254 - LLM streaming completed in 8.28s (7 tokens)
-DEBUG 2025-12-08 13:12:51,254 - Waiting for TTS to complete
-DEBUG 2025-12-08 13:12:52,754 - Conversation #2 completed in 28.87s
-DEBUG 2025-12-08 13:12:52,765 - Audio stream started.
-INFO 2025-12-08 13:12:52,765 - Ready! Listening for 'hey jarvis'...
-DEBUG 2025-12-08 13:12:58,148 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
-DEBUG 2025-12-08 13:12:58,188 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
-INFO 2025-12-08 13:12:58,188 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.00)
-DEBUG 2025-12-08 13:12:58,237 - Playing acknowledgment
-DEBUG 2025-12-08 13:12:58,889 - Starting audio recording for command
-DEBUG 2025-12-08 13:12:58,905 - Audio stream started.
-DEBUG 2025-12-08 13:12:59,233 - Speech started, using 0 pre-buffer chunks
-DEBUG 2025-12-08 13:13:14,252 - Max phrase duration of 15.0s exceeded. Forcing stop.
-DEBUG 2025-12-08 13:13:14,296 - Audio recording completed in 15.05s
-DEBUG 2025-12-08 13:13:14,297 - Audio quality check - RMS: 0.1028, Peak: 1.0000
-DEBUG 2025-12-08 13:13:14,298 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
-DEBUG 2025-12-08 13:13:14,298 - Transcription attempt 1/2
-DEBUG 2025-12-08 13:13:14,298 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
-INFO 2025-12-08 13:13:14,298 - Processing audio with duration 00:15.030
-DEBUG 2025-12-08 13:13:14,308 - Transcription info - language: en, language_probability: 1.00
-DEBUG 2025-12-08 13:13:14,309 - Processing segment at 00:00.000
-DEBUG 2025-12-08 13:13:18,558 - Segment 1: [0.00s-7.00s] avg_logprob=-0.688, no_speech_prob=0.151, text='What about Canada?'
-DEBUG 2025-12-08 13:13:18,558 -   ✓ Segment accepted
-DEBUG 2025-12-08 13:13:18,559 - Segment 2: [10.44s-12.44s] avg_logprob=-0.688, no_speech_prob=0.151, text='Okay, I'm going to set up some baseline questions.'
-DEBUG 2025-12-08 13:13:18,559 -   ✓ Segment accepted
-DEBUG 2025-12-08 13:13:18,559 - Transcription result: 'What about Canada? Okay, I'm going to set up some baseline questions.' (2/2 segments used)
-DEBUG 2025-12-08 13:13:18,559 - Transcription successful on attempt 1: 'What about Canada? Okay, I'm going to set up some baseline questions.'
-DEBUG 2025-12-08 13:13:18,560 - Transcription completed in 4.26s
-DEBUG 2025-12-08 13:13:18,560 - No wake word pattern found, keeping original text
-DEBUG 2025-12-08 13:13:18,560 - Using first sentence only: 'What about Canada?'
-INFO 2025-12-08 13:13:18,560 - You: What about Canada?
-DEBUG 2025-12-08 13:13:18,561 - Sending to LLM
-DEBUG 2025-12-08 13:13:18,563 - close.started
-DEBUG 2025-12-08 13:13:18,564 - close.complete
-DEBUG 2025-12-08 13:13:18,564 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-08 13:13:18,565 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fe4ec119370>
-DEBUG 2025-12-08 13:13:18,565 - send_request_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:13:18,566 - send_request_headers.complete
-DEBUG 2025-12-08 13:13:18,566 - send_request_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:13:18,567 - send_request_body.complete
-DEBUG 2025-12-08 13:13:18,567 - receive_response_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:13:24,574 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 18:13:24 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-08 13:13:24,575 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-DEBUG 2025-12-08 13:13:24,575 - receive_response_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:13:33,027 - Queuing sentence for TTS: 'The Great White North: land of maple syrup, mounti...'
-DEBUG 2025-12-08 13:13:33,654 - receive_response_body.complete
-DEBUG 2025-12-08 13:13:33,654 - response_closed.started
-DEBUG 2025-12-08 13:13:33,654 - response_closed.complete
-DEBUG 2025-12-08 13:13:33,655 - LLM streaming completed in 15.09s (21 tokens)
-DEBUG 2025-12-08 13:13:33,655 - Waiting for TTS to complete
-DEBUG 2025-12-08 13:13:38,979 - Conversation #3 completed in 40.79s
-DEBUG 2025-12-08 13:13:38,990 - Audio stream started.
-INFO 2025-12-08 13:13:38,990 - Ready! Listening for 'hey jarvis'...
-DEBUG 2025-12-08 13:13:39,127 - Wakeword candidate detected (score: 0.99, consecutive: 1/2)
-DEBUG 2025-12-08 13:13:39,166 - Wakeword candidate detected (score: 0.99, consecutive: 2/2)
-INFO 2025-12-08 13:13:39,166 - Wakeword detected! (score: 0.99, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.99, 0.99)
-DEBUG 2025-12-08 13:13:39,216 - Playing acknowledgment
-DEBUG 2025-12-08 13:13:39,827 - Starting audio recording for command
-DEBUG 2025-12-08 13:13:39,844 - Audio stream started.
-DEBUG 2025-12-08 13:13:40,169 - Speech started, using 0 pre-buffer chunks
-DEBUG 2025-12-08 13:13:55,187 - Max phrase duration of 15.0s exceeded. Forcing stop.
-DEBUG 2025-12-08 13:13:55,233 - Audio recording completed in 15.04s
-DEBUG 2025-12-08 13:13:55,234 - Audio quality check - RMS: 0.1609, Peak: 1.0000
-DEBUG 2025-12-08 13:13:55,234 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
-DEBUG 2025-12-08 13:13:55,234 - Transcription attempt 1/2
-DEBUG 2025-12-08 13:13:55,234 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
-INFO 2025-12-08 13:13:55,234 - Processing audio with duration 00:15.030
-DEBUG 2025-12-08 13:13:55,252 - Transcription info - language: en, language_probability: 1.00
-DEBUG 2025-12-08 13:13:55,253 - Processing segment at 00:00.000
-DEBUG 2025-12-08 13:13:59,415 - Segment 1: [0.00s-7.00s] avg_logprob=-0.371, no_speech_prob=0.168, text='Hejardus, what version are you?'
-DEBUG 2025-12-08 13:13:59,415 -   ✓ Segment accepted
-DEBUG 2025-12-08 13:13:59,415 - Transcription result: 'Hejardus, what version are you?' (1/1 segments used)
-DEBUG 2025-12-08 13:13:59,416 - Transcription successful on attempt 1: 'Hejardus, what version are you?'
-DEBUG 2025-12-08 13:13:59,416 - Transcription completed in 4.18s
-DEBUG 2025-12-08 13:13:59,416 - No wake word pattern found, keeping original text
-INFO 2025-12-08 13:13:59,417 - You: Hejardus, what version are you?
-DEBUG 2025-12-08 13:13:59,417 - Sending to LLM
-DEBUG 2025-12-08 13:13:59,419 - close.started
-DEBUG 2025-12-08 13:13:59,420 - close.complete
-DEBUG 2025-12-08 13:13:59,420 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
-DEBUG 2025-12-08 13:13:59,421 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fe4ec119eb0>
-DEBUG 2025-12-08 13:13:59,421 - send_request_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:13:59,422 - send_request_headers.complete
-DEBUG 2025-12-08 13:13:59,422 - send_request_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:13:59,423 - send_request_body.complete
-DEBUG 2025-12-08 13:13:59,423 - receive_response_headers.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:14:04,636 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 18:14:04 GMT'), (b'Transfer-Encoding', b'chunked')])
-INFO 2025-12-08 13:14:04,637 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-DEBUG 2025-12-08 13:14:04,638 - receive_response_body.started request=<Request [b'POST']>
-DEBUG 2025-12-08 13:14:08,866 - Queuing sentence for TTS: 'Just a tiny upgrade away from being obsolete!...'
-DEBUG 2025-12-08 13:14:09,545 - receive_response_body.complete
-DEBUG 2025-12-08 13:14:09,546 - response_closed.started
-DEBUG 2025-12-08 13:14:09,546 - response_closed.complete
-DEBUG 2025-12-08 13:14:09,547 - LLM streaming completed in 10.13s (10 tokens)
-DEBUG 2025-12-08 13:14:09,547 - Waiting for TTS to complete
-DEBUG 2025-12-08 13:14:12,111 - Conversation #4 completed in 32.94s
-DEBUG 2025-12-08 13:14:12,123 - Audio stream started.
-INFO 2025-12-08 13:14:12,124 - Ready! Listening for 'hey jarvis'...
-DEBUG 2025-12-08 13:14:12,257 - Wakeword candidate detected (score: 0.93, consecutive: 1/2)
-DEBUG 2025-12-08 13:14:12,303 - Wakeword detection sequence broken (score: 0.00)
-DEBUG 2025-12-08 13:14:16,611 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
-DEBUG 2025-12-08 13:14:16,651 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
-INFO 2025-12-08 13:14:16,652 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.01, 0.01, 0.01, 1.00, 1.00)
-DEBUG 2025-12-08 13:14:16,700 - Playing acknowledgment
-DEBUG 2025-12-08 13:14:17,462 - Starting audio recording for command
-DEBUG 2025-12-08 13:14:17,474 - Audio stream started.
-DEBUG 2025-12-08 13:14:17,803 - Speech started, using 0 pre-buffer chunks
-DEBUG 2025-12-08 13:14:32,822 - Max phrase duration of 15.0s exceeded. Forcing stop.
-DEBUG 2025-12-08 13:14:32,866 - Audio recording completed in 15.05s
-DEBUG 2025-12-08 13:14:32,867 - Audio quality check - RMS: 0.0833, Peak: 1.0000
-DEBUG 2025-12-08 13:14:32,867 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
-DEBUG 2025-12-08 13:14:32,867 - Transcription attempt 1/2
-DEBUG 2025-12-08 13:14:32,867 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
-INFO 2025-12-08 13:14:32,867 - Processing audio with duration 00:15.030
-DEBUG 2025-12-08 13:14:32,883 - Transcription info - language: en, language_probability: 1.00
-DEBUG 2025-12-08 13:14:32,884 - Processing segment at 00:00.000
-DEBUG 2025-12-08 13:14:35,916 - Segment 1: [0.00s-0.50s] avg_logprob=-0.754, no_speech_prob=0.064, text='Goodbye.'
-DEBUG 2025-12-08 13:14:35,916 -   ✓ Segment accepted
-DEBUG 2025-12-08 13:14:35,916 - Transcription result: 'Goodbye.' (1/1 segments used)
-DEBUG 2025-12-08 13:14:35,917 - Transcription successful on attempt 1: 'Goodbye.'
-DEBUG 2025-12-08 13:14:35,917 - Transcription completed in 3.05s
-DEBUG 2025-12-08 13:14:35,917 - No wake word pattern found, keeping original text
-INFO 2025-12-08 13:14:35,917 - You: Goodbye.
-DEBUG 2025-12-08 13:14:35,918 - Exit command detected
-DEBUG 2025-12-08 13:14:36,708 - Starting cleanup
-DEBUG 2025-12-08 13:14:36,719 - Closing Whisper transcriber
-DEBUG 2025-12-08 13:14:36,734 - Cleanup complete
-DEBUG 2025-12-08 13:14:37,062 - --- Top 10 Memory Allocations ---
-DEBUG 2025-12-08 13:14:37,062 - /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/openwakeword/utils.py:298: size=6069 KiB, count=155446, average=40 B
-DEBUG 2025-12-08 13:14:37,062 - <frozen importlib._bootstrap_external>:757: size=1465 KiB, count=9114, average=165 B
-DEBUG 2025-12-08 13:14:37,062 - /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/numpy/_core/shape_base.py:292: size=290 KiB, count=4, average=72.6 KiB
-DEBUG 2025-12-08 13:14:37,062 - /usr/lib64/python3.12/dataclasses.py:473: size=262 KiB, count=2359, average=114 B
-DEBUG 2025-12-08 13:14:37,062 - /usr/lib64/python3.12/inspect.py:3076: size=63.7 KiB, count=977, average=67 B
-DEBUG 2025-12-08 13:14:37,062 - /usr/lib64/python3.12/dataclasses.py:424: size=49.6 KiB, count=423, average=120 B
-DEBUG 2025-12-08 13:14:37,062 - <string>:2: size=42.3 KiB, count=303, average=143 B
-DEBUG 2025-12-08 13:14:37,062 - /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/onnxruntime/capi/onnxruntime_inference_collection.py:287: size=36.7 KiB, count=442, average=85 B
-DEBUG 2025-12-08 13:14:37,062 - /usr/lib64/python3.12/inspect.py:2471: size=26.8 KiB, count=429, average=64 B
-DEBUG 2025-12-08 13:14:37,063 - /usr/lib64/python3.12/enum.py:595: size=26.4 KiB, count=89, average=304 B
-DEBUG 2025-12-08 13:14:37,063 - ---------------------------------
-DEBUG 2025-12-08 13:14:37,092 - close.started
-DEBUG 2025-12-08 13:14:37,093 - close.complete
+INFO 2025-12-08 15:01:55,912 - Loaded configuration from /home/steve/git-projects/ollama-STT-TTS/config.ini
+DEBUG 2025-12-08 15:01:55,914 - DEBUG logging enabled.
+INFO 2025-12-08 15:01:55,914 - Using Ollama model: llama3
+INFO 2025-12-08 15:01:55,914 - Using Whisper model: small.en on cpu
+INFO 2025-12-08 15:01:55,914 - Trim wake word from transcription: Enabled
+INFO 2025-12-08 15:01:55,914 - Attempting to connect to Ollama at http://localhost:11434...
+DEBUG 2025-12-08 15:01:55,922 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:01:55,931 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a23ebd880>
+DEBUG 2025-12-08 15:01:55,932 - send_request_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:55,932 - send_request_headers.complete
+DEBUG 2025-12-08 15:01:55,932 - send_request_body.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:55,932 - send_request_body.complete
+DEBUG 2025-12-08 15:01:55,932 - receive_response_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:55,935 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Mon, 08 Dec 2025 20:01:55 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:01:55,937 - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:01:55,938 - receive_response_body.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:55,938 - receive_response_body.complete
+DEBUG 2025-12-08 15:01:55,939 - response_closed.started
+DEBUG 2025-12-08 15:01:55,939 - response_closed.complete
+INFO 2025-12-08 15:01:55,940 - Ollama server connection successful.
+DEBUG 2025-12-08 15:01:55,940 - VoiceAssistant init - cooldown: 1.0s, required consecutive: 2
+INFO 2025-12-08 15:01:55,940 - Loading faster-whisper model: small.en on device 'cpu'...
+DEBUG 2025-12-08 15:01:56,263 - connect_tcp.started host='huggingface.co' port=443 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:01:57,736 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b94c5f0>
+DEBUG 2025-12-08 15:01:57,736 - start_tls.started ssl_context=<ssl.SSLContext object at 0x7f6a1b93e150> server_hostname='huggingface.co' timeout=None
+DEBUG 2025-12-08 15:01:57,837 - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a250ddfa0>
+DEBUG 2025-12-08 15:01:57,838 - send_request_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:57,838 - send_request_headers.complete
+DEBUG 2025-12-08 15:01:57,838 - send_request_body.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:57,838 - send_request_body.complete
+DEBUG 2025-12-08 15:01:57,838 - receive_response_headers.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:57,941 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'964'), (b'Connection', b'keep-alive'), (b'Date', b'Mon, 08 Dec 2025 20:01:57 GMT'), (b'ETag', b'W/"3c4-sJJeapDBRUXDDOAtAr3Tfmak3JU"'), (b'X-Powered-By', b'huggingface-moon'), (b'X-Request-Id', b'Root=1-69372eb5-62e3643d629cdf0b4e0b4e8a;a5af38be-767d-45ef-9a87-66385fabcc52'), (b'RateLimit', b'"api";r=499;t=197'), (b'RateLimit-Policy', b'"fixed window";"api";q=500;w=300'), (b'cross-origin-opener-policy', b'same-origin'), (b'Referrer-Policy', b'strict-origin-when-cross-origin'), (b'Access-Control-Max-Age', b'86400'), (b'Access-Control-Allow-Origin', b'https://huggingface.co'), (b'Vary', b'Origin'), (b'Access-Control-Expose-Headers', b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash'), (b'X-Cache', b'Miss from cloudfront'), (b'Via', b'1.1 0b747b384dcf4955c35701c58efbe99a.cloudfront.net (CloudFront)'), (b'X-Amz-Cf-Pop', b'YUL62-P3'), (b'X-Amz-Cf-Id', b'6hd1149cn-esM4ikmhmxi6iVGbQB0j8sfSXp2q40qcQAJZZhDqbGtQ==')])
+INFO 2025-12-08 15:01:57,942 - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-small.en/revision/main "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:01:57,943 - receive_response_body.started request=<Request [b'GET']>
+DEBUG 2025-12-08 15:01:57,943 - receive_response_body.complete
+DEBUG 2025-12-08 15:01:57,943 - response_closed.started
+DEBUG 2025-12-08 15:01:57,943 - response_closed.complete
+DEBUG 2025-12-08 15:01:58,879 - Whisper model loaded successfully
+INFO 2025-12-08 15:01:58,880 - Initializing Piper TTS...
+INFO 2025-12-08 15:01:59,709 - Loaded Piper voice. Rate: 22050Hz
+DEBUG 2025-12-08 15:01:59,709 - Loading wakeword model from: /home/steve/git-projects/ollama-STT-TTS/models/jarvis_v2.onnx
+DEBUG 2025-12-08 15:01:59,991 - Wakeword model loaded with key: jarvis_v2
+INFO 2025-12-08 15:01:59,991 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:02:00,012 - Audio stream started.
+DEBUG 2025-12-08 15:02:03,161 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:02:03,201 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
+INFO 2025-12-08 15:02:03,201 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.00)
+DEBUG 2025-12-08 15:02:03,246 - Playing acknowledgment
+DEBUG 2025-12-08 15:02:03,946 - Starting audio recording for command
+DEBUG 2025-12-08 15:02:03,959 - Audio stream started.
+DEBUG 2025-12-08 15:02:04,289 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:02:19,308 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:02:19,352 - Audio recording completed in 15.05s
+DEBUG 2025-12-08 15:02:19,353 - Audio quality check - RMS: 0.1282, Peak: 1.0000
+DEBUG 2025-12-08 15:02:19,353 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:02:19,354 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:02:19,354 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:02:19,354 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:02:19,372 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:02:19,373 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:02:23,962 - Segment 1: [0.00s-0.64s] avg_logprob=-0.315, no_speech_prob=0.094, text='What time is it?'
+DEBUG 2025-12-08 15:02:23,962 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:02:23,963 - Transcription result: 'What time is it?' (1/1 segments used)
+DEBUG 2025-12-08 15:02:23,963 - Transcription successful on attempt 1: 'What time is it?'
+DEBUG 2025-12-08 15:02:23,963 - Transcription completed in 4.61s
+DEBUG 2025-12-08 15:02:23,964 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:02:23,965 - You: What time is it?
+DEBUG 2025-12-08 15:02:23,965 - Sending to LLM
+DEBUG 2025-12-08 15:02:23,968 - close.started
+DEBUG 2025-12-08 15:02:23,968 - close.complete
+DEBUG 2025-12-08 15:02:23,968 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:02:23,970 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b94fe60>
+DEBUG 2025-12-08 15:02:23,970 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:02:23,971 - send_request_headers.complete
+DEBUG 2025-12-08 15:02:23,971 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:02:23,971 - send_request_body.complete
+DEBUG 2025-12-08 15:02:23,971 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:02:49,920 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:02:49 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:02:49,921 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:02:49,922 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:02:52,149 - Queuing sentence for TTS: 'Time to get a grip on reality!...'
+DEBUG 2025-12-08 15:02:54,510 - Queuing sentence for TTS: 'It's [insert current time]....'
+DEBUG 2025-12-08 15:02:54,883 - receive_response_body.complete
+DEBUG 2025-12-08 15:02:54,883 - response_closed.started
+DEBUG 2025-12-08 15:02:54,883 - response_closed.complete
+DEBUG 2025-12-08 15:02:54,883 - LLM streaming completed in 30.92s (16 tokens)
+DEBUG 2025-12-08 15:02:54,883 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:02:56,360 - Conversation #1 completed in 53.16s
+DEBUG 2025-12-08 15:02:56,440 - Audio stream started.
+INFO 2025-12-08 15:02:56,440 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:03:09,162 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:03:09,202 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
+INFO 2025-12-08 15:03:09,202 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.00)
+DEBUG 2025-12-08 15:03:09,251 - Playing acknowledgment
+DEBUG 2025-12-08 15:03:09,955 - Starting audio recording for command
+DEBUG 2025-12-08 15:03:09,967 - Audio stream started.
+DEBUG 2025-12-08 15:03:10,290 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:03:25,308 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:03:25,352 - Audio recording completed in 15.04s
+DEBUG 2025-12-08 15:03:25,353 - Audio quality check - RMS: 0.1246, Peak: 1.0000
+DEBUG 2025-12-08 15:03:25,353 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:03:25,353 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:03:25,354 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:03:25,354 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:03:25,370 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:03:25,371 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:03:28,159 - Segment 1: [0.00s-11.66s] avg_logprob=-0.356, no_speech_prob=0.100, text='What version are you?'
+DEBUG 2025-12-08 15:03:28,159 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:03:28,159 - Transcription result: 'What version are you?' (1/1 segments used)
+DEBUG 2025-12-08 15:03:28,160 - Transcription successful on attempt 1: 'What version are you?'
+DEBUG 2025-12-08 15:03:28,160 - Transcription completed in 2.81s
+DEBUG 2025-12-08 15:03:28,160 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:03:28,160 - You: What version are you?
+DEBUG 2025-12-08 15:03:28,160 - Sending to LLM
+DEBUG 2025-12-08 15:03:28,162 - close.started
+DEBUG 2025-12-08 15:03:28,162 - close.complete
+DEBUG 2025-12-08 15:03:28,162 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:03:28,163 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b94f530>
+DEBUG 2025-12-08 15:03:28,164 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:03:28,164 - send_request_headers.complete
+DEBUG 2025-12-08 15:03:28,164 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:03:28,165 - send_request_body.complete
+DEBUG 2025-12-08 15:03:28,165 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:03:33,148 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:03:33 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:03:33,149 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:03:33,149 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:03:38,061 - Queuing sentence for TTS: 'Just a tiny piece of artificial intelligence aweso...'
+DEBUG 2025-12-08 15:03:40,658 - Queuing sentence for TTS: '0 (and proud of it)!...'
+DEBUG 2025-12-08 15:03:41,001 - receive_response_body.complete
+DEBUG 2025-12-08 15:03:41,002 - response_closed.started
+DEBUG 2025-12-08 15:03:41,002 - response_closed.complete
+DEBUG 2025-12-08 15:03:41,002 - LLM streaming completed in 12.84s (24 tokens)
+DEBUG 2025-12-08 15:03:41,002 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:03:44,042 - Conversation #2 completed in 34.84s
+DEBUG 2025-12-08 15:03:44,053 - Audio stream started.
+INFO 2025-12-08 15:03:44,053 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:03:44,188 - Wakeword candidate detected (score: 0.99, consecutive: 1/2)
+DEBUG 2025-12-08 15:03:44,228 - Wakeword candidate detected (score: 0.99, consecutive: 2/2)
+INFO 2025-12-08 15:03:44,228 - Wakeword detected! (score: 0.99, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.99, 0.99)
+DEBUG 2025-12-08 15:03:44,277 - Playing acknowledgment
+DEBUG 2025-12-08 15:03:45,056 - Starting audio recording for command
+DEBUG 2025-12-08 15:03:45,096 - Audio stream started.
+DEBUG 2025-12-08 15:03:45,423 - Speech started, using 1 pre-buffer chunks
+DEBUG 2025-12-08 15:04:00,441 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:04:00,486 - Audio recording completed in 15.05s
+DEBUG 2025-12-08 15:04:00,487 - Audio quality check - RMS: 0.0841, Peak: 0.4369
+DEBUG 2025-12-08 15:04:00,487 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:04:00,487 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:04:00,487 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:04:00,487 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:04:00,503 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:04:00,504 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:04:03,291 - No speech threshold is met (0.878242 > 0.600000)
+WARNING 2025-12-08 15:04:03,292 - No valid segments found (0 total, 0 discarded)
+DEBUG 2025-12-08 15:04:03,292 - Transcription attempt 1 failed, relaxing thresholds to logprob=-1.5, no_speech=0.9
+DEBUG 2025-12-08 15:04:03,292 - Transcription attempt 2/2
+DEBUG 2025-12-08 15:04:03,293 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:04:03,293 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:04:03,317 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:04:03,318 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:04:06,342 - No speech threshold is met (0.878242 > 0.600000)
+WARNING 2025-12-08 15:04:06,342 - No valid segments found (0 total, 0 discarded)
+WARNING 2025-12-08 15:04:06,342 - All 2 transcription attempts failed
+DEBUG 2025-12-08 15:04:06,343 - Transcription completed in 5.86s
+DEBUG 2025-12-08 15:04:06,343 - Transcription was empty or whitespace only
+DEBUG 2025-12-08 15:04:06,360 - Audio stream started.
+INFO 2025-12-08 15:04:06,360 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:04:11,487 - Wakeword candidate detected (score: 0.90, consecutive: 1/2)
+DEBUG 2025-12-08 15:04:11,526 - Wakeword candidate detected (score: 0.90, consecutive: 2/2)
+INFO 2025-12-08 15:04:11,526 - Wakeword detected! (score: 0.90, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.90, 0.90)
+DEBUG 2025-12-08 15:04:11,576 - Playing acknowledgment
+DEBUG 2025-12-08 15:04:12,247 - Starting audio recording for command
+DEBUG 2025-12-08 15:04:12,258 - Audio stream started.
+DEBUG 2025-12-08 15:04:12,592 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:04:27,610 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:04:27,655 - Audio recording completed in 15.05s
+DEBUG 2025-12-08 15:04:27,656 - Audio quality check - RMS: 0.1759, Peak: 1.0000
+DEBUG 2025-12-08 15:04:27,656 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:04:27,656 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:04:27,657 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:04:27,657 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:04:27,667 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:04:27,672 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:04:30,766 - Segment 1: [0.00s-9.00s] avg_logprob=-0.417, no_speech_prob=0.200, text='Do you draw coffee?'
+DEBUG 2025-12-08 15:04:30,766 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:04:30,766 - Segment 2: [9.00s-15.00s] avg_logprob=-0.417, no_speech_prob=0.200, text='Do you draw coffee?'
+DEBUG 2025-12-08 15:04:30,766 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:04:30,766 - Transcription result: 'Do you draw coffee? Do you draw coffee?' (2/2 segments used)
+DEBUG 2025-12-08 15:04:30,767 - Transcription successful on attempt 1: 'Do you draw coffee? Do you draw coffee?'
+DEBUG 2025-12-08 15:04:30,767 - Transcription completed in 3.11s
+DEBUG 2025-12-08 15:04:30,767 - No wake word pattern found, keeping original text
+DEBUG 2025-12-08 15:04:30,767 - Using first sentence only: 'Do you draw coffee?'
+INFO 2025-12-08 15:04:30,768 - You: Do you draw coffee?
+DEBUG 2025-12-08 15:04:30,768 - Sending to LLM
+DEBUG 2025-12-08 15:04:30,769 - close.started
+DEBUG 2025-12-08 15:04:30,770 - close.complete
+DEBUG 2025-12-08 15:04:30,770 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:04:30,770 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b5e9700>
+DEBUG 2025-12-08 15:04:30,771 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:04:30,771 - send_request_headers.complete
+DEBUG 2025-12-08 15:04:30,771 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:04:30,772 - send_request_body.complete
+DEBUG 2025-12-08 15:04:30,772 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:04:35,697 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:04:35 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:04:35,698 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:04:35,698 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:04:39,602 - Queuing sentence for TTS: 'No, but I'll brew up some witty banter instead!...'
+DEBUG 2025-12-08 15:04:39,975 - receive_response_body.complete
+DEBUG 2025-12-08 15:04:39,975 - response_closed.started
+DEBUG 2025-12-08 15:04:39,975 - response_closed.complete
+DEBUG 2025-12-08 15:04:39,976 - LLM streaming completed in 9.21s (14 tokens)
+DEBUG 2025-12-08 15:04:39,976 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:04:43,205 - Conversation #3 completed in 31.68s
+DEBUG 2025-12-08 15:04:43,217 - Audio stream started.
+INFO 2025-12-08 15:04:43,217 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:04:43,352 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:04:43,392 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
+INFO 2025-12-08 15:04:43,392 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.00)
+DEBUG 2025-12-08 15:04:43,440 - Playing acknowledgment
+DEBUG 2025-12-08 15:04:44,060 - Starting audio recording for command
+DEBUG 2025-12-08 15:04:44,071 - Audio stream started.
+DEBUG 2025-12-08 15:04:44,395 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:04:59,413 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:04:59,458 - Audio recording completed in 15.04s
+DEBUG 2025-12-08 15:04:59,459 - Audio quality check - RMS: 0.1937, Peak: 1.0000
+DEBUG 2025-12-08 15:04:59,459 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:04:59,459 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:04:59,460 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:04:59,460 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:04:59,474 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:04:59,475 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:05:02,372 - Segment 1: [0.00s-8.48s] avg_logprob=-0.215, no_speech_prob=0.127, text='Hey Jarvis, what's your favorite sports team?'
+DEBUG 2025-12-08 15:05:02,372 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:05:02,372 - Transcription result: 'Hey Jarvis, what's your favorite sports team?' (1/1 segments used)
+DEBUG 2025-12-08 15:05:02,372 - Transcription successful on attempt 1: 'Hey Jarvis, what's your favorite sports team?'
+DEBUG 2025-12-08 15:05:02,373 - Transcription completed in 2.91s
+DEBUG 2025-12-08 15:05:02,373 - Exact wake word match trimmed
+DEBUG 2025-12-08 15:05:02,373 - Wake word trimmed: 'Hey Jarvis, what's your favorite sports team?' -> 'what's your favorite sports team?'
+INFO 2025-12-08 15:05:02,373 - You: what's your favorite sports team?
+DEBUG 2025-12-08 15:05:02,373 - Sending to LLM
+DEBUG 2025-12-08 15:05:02,375 - close.started
+DEBUG 2025-12-08 15:05:02,375 - close.complete
+DEBUG 2025-12-08 15:05:02,375 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:05:02,376 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b5ea3c0>
+DEBUG 2025-12-08 15:05:02,376 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:05:02,377 - send_request_headers.complete
+DEBUG 2025-12-08 15:05:02,377 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:05:02,377 - send_request_body.complete
+DEBUG 2025-12-08 15:05:02,377 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:05:07,938 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:05:07 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:05:07,938 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:05:07,939 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:05:08,243 - Queuing sentence for TTS: 'Ha!...'
+DEBUG 2025-12-08 15:05:17,111 - Queuing sentence for TTS: 'As a brain-powered AI, my "team spirit" is limited...'
+DEBUG 2025-12-08 15:05:17,510 - receive_response_body.complete
+DEBUG 2025-12-08 15:05:17,511 - response_closed.started
+DEBUG 2025-12-08 15:05:17,511 - response_closed.complete
+DEBUG 2025-12-08 15:05:17,511 - LLM streaming completed in 15.14s (30 tokens)
+DEBUG 2025-12-08 15:05:17,512 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:05:24,891 - Conversation #4 completed in 41.50s
+DEBUG 2025-12-08 15:05:24,902 - Audio stream started.
+INFO 2025-12-08 15:05:24,902 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:05:25,035 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:05:25,081 - Wakeword detection sequence broken (score: 0.01)
+DEBUG 2025-12-08 15:05:40,099 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:05:40,139 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
+INFO 2025-12-08 15:05:40,139 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.01, 0.01, 0.01, 1.00, 1.00)
+DEBUG 2025-12-08 15:05:40,193 - Playing acknowledgment
+DEBUG 2025-12-08 15:05:40,854 - Starting audio recording for command
+DEBUG 2025-12-08 15:05:40,863 - Audio stream started.
+DEBUG 2025-12-08 15:05:41,184 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:05:56,203 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:05:56,247 - Audio recording completed in 15.04s
+DEBUG 2025-12-08 15:05:56,248 - Audio quality check - RMS: 0.1121, Peak: 1.0000
+DEBUG 2025-12-08 15:05:56,248 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:05:56,248 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:05:56,249 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:05:56,249 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:05:56,265 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:05:56,266 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:05:59,245 - Segment 1: [0.00s-7.00s] avg_logprob=-0.300, no_speech_prob=0.050, text='What's your favorite color?'
+DEBUG 2025-12-08 15:05:59,246 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:05:59,246 - Transcription result: 'What's your favorite color?' (1/1 segments used)
+DEBUG 2025-12-08 15:05:59,246 - Transcription successful on attempt 1: 'What's your favorite color?'
+DEBUG 2025-12-08 15:05:59,246 - Transcription completed in 3.00s
+DEBUG 2025-12-08 15:05:59,247 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:05:59,247 - You: What's your favorite color?
+DEBUG 2025-12-08 15:05:59,247 - Sending to LLM
+DEBUG 2025-12-08 15:05:59,249 - close.started
+DEBUG 2025-12-08 15:05:59,249 - close.complete
+DEBUG 2025-12-08 15:05:59,249 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:05:59,250 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b5eb3b0>
+DEBUG 2025-12-08 15:05:59,250 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:05:59,250 - send_request_headers.complete
+DEBUG 2025-12-08 15:05:59,251 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:05:59,251 - send_request_body.complete
+DEBUG 2025-12-08 15:05:59,251 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:06:03,391 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:06:03 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:06:03,392 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:06:03,392 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:06:09,540 - Queuing sentence for TTS: 'I'm a neutral AI – I exist in the gray area betwee...'
+DEBUG 2025-12-08 15:06:10,005 - receive_response_body.complete
+DEBUG 2025-12-08 15:06:10,006 - response_closed.started
+DEBUG 2025-12-08 15:06:10,006 - response_closed.complete
+DEBUG 2025-12-08 15:06:10,006 - LLM streaming completed in 10.76s (19 tokens)
+DEBUG 2025-12-08 15:06:10,006 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:06:14,562 - Conversation #5 completed in 34.42s
+DEBUG 2025-12-08 15:06:14,574 - Audio stream started.
+INFO 2025-12-08 15:06:14,574 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:06:14,709 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:06:14,749 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
+INFO 2025-12-08 15:06:14,749 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.00)
+DEBUG 2025-12-08 15:06:14,799 - Playing acknowledgment
+DEBUG 2025-12-08 15:06:15,415 - Starting audio recording for command
+DEBUG 2025-12-08 15:06:15,426 - Audio stream started.
+DEBUG 2025-12-08 15:06:15,751 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:06:30,771 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:06:30,817 - Audio recording completed in 15.05s
+DEBUG 2025-12-08 15:06:30,818 - Audio quality check - RMS: 0.1442, Peak: 1.0000
+DEBUG 2025-12-08 15:06:30,818 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:06:30,818 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:06:30,818 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:06:30,818 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:06:30,831 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:06:30,834 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:06:33,919 - Segment 1: [0.00s-4.40s] avg_logprob=-0.407, no_speech_prob=0.105, text='He turned us, how are you?'
+DEBUG 2025-12-08 15:06:33,919 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:06:33,920 - Transcription result: 'He turned us, how are you?' (1/1 segments used)
+DEBUG 2025-12-08 15:06:33,920 - Transcription successful on attempt 1: 'He turned us, how are you?'
+DEBUG 2025-12-08 15:06:33,920 - Transcription completed in 3.10s
+DEBUG 2025-12-08 15:06:33,920 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:06:33,920 - You: He turned us, how are you?
+DEBUG 2025-12-08 15:06:33,921 - Sending to LLM
+DEBUG 2025-12-08 15:06:33,922 - close.started
+DEBUG 2025-12-08 15:06:33,923 - close.complete
+DEBUG 2025-12-08 15:06:33,923 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:06:33,924 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b5ebf50>
+DEBUG 2025-12-08 15:06:33,924 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:06:33,924 - send_request_headers.complete
+DEBUG 2025-12-08 15:06:33,925 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:06:33,925 - send_request_body.complete
+DEBUG 2025-12-08 15:06:33,925 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:06:39,609 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:06:39 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:06:39,609 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:06:39,610 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:06:42,611 - Queuing sentence for TTS: 'Still functioning within acceptable parameters, th...'
+DEBUG 2025-12-08 15:06:43,049 - receive_response_body.complete
+DEBUG 2025-12-08 15:06:43,049 - response_closed.started
+DEBUG 2025-12-08 15:06:43,049 - response_closed.complete
+DEBUG 2025-12-08 15:06:43,050 - LLM streaming completed in 9.13s (11 tokens)
+DEBUG 2025-12-08 15:06:43,050 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:06:46,945 - Conversation #6 completed in 32.20s
+DEBUG 2025-12-08 15:06:46,956 - Audio stream started.
+INFO 2025-12-08 15:06:46,956 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:06:47,089 - Wakeword candidate detected (score: 0.96, consecutive: 1/2)
+DEBUG 2025-12-08 15:06:47,134 - Wakeword detection sequence broken (score: 0.00)
+DEBUG 2025-12-08 15:06:54,687 - Wakeword candidate detected (score: 0.99, consecutive: 1/2)
+DEBUG 2025-12-08 15:06:54,727 - Wakeword candidate detected (score: 0.99, consecutive: 2/2)
+INFO 2025-12-08 15:06:54,728 - Wakeword detected! (score: 0.99, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.99, 0.99)
+DEBUG 2025-12-08 15:06:54,777 - Playing acknowledgment
+DEBUG 2025-12-08 15:06:55,471 - Starting audio recording for command
+DEBUG 2025-12-08 15:06:55,480 - Audio stream started.
+DEBUG 2025-12-08 15:06:55,815 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:07:10,834 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:07:10,879 - Audio recording completed in 15.06s
+DEBUG 2025-12-08 15:07:10,880 - Audio quality check - RMS: 0.0526, Peak: 0.2995
+DEBUG 2025-12-08 15:07:10,880 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:07:10,880 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:07:10,881 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:07:10,881 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:07:10,896 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:07:10,897 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:07:14,038 - No speech threshold is met (0.777418 > 0.600000)
+WARNING 2025-12-08 15:07:14,039 - No valid segments found (0 total, 0 discarded)
+DEBUG 2025-12-08 15:07:14,039 - Transcription attempt 1 failed, relaxing thresholds to logprob=-1.5, no_speech=0.9
+DEBUG 2025-12-08 15:07:14,039 - Transcription attempt 2/2
+DEBUG 2025-12-08 15:07:14,040 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:07:14,040 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:07:14,058 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:07:14,059 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:07:17,283 - No speech threshold is met (0.777418 > 0.600000)
+WARNING 2025-12-08 15:07:17,283 - No valid segments found (0 total, 0 discarded)
+WARNING 2025-12-08 15:07:17,283 - All 2 transcription attempts failed
+DEBUG 2025-12-08 15:07:17,284 - Transcription completed in 6.40s
+DEBUG 2025-12-08 15:07:17,284 - Transcription was empty or whitespace only
+DEBUG 2025-12-08 15:07:17,301 - Audio stream started.
+INFO 2025-12-08 15:07:17,301 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:07:17,506 - Wakeword candidate detected (score: 0.66, consecutive: 1/2)
+DEBUG 2025-12-08 15:07:17,546 - Wakeword candidate detected (score: 0.66, consecutive: 2/2)
+INFO 2025-12-08 15:07:17,546 - Wakeword detected! (score: 0.66, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.66, 0.66)
+DEBUG 2025-12-08 15:07:17,593 - Playing acknowledgment
+DEBUG 2025-12-08 15:07:18,164 - Starting audio recording for command
+DEBUG 2025-12-08 15:07:18,178 - Audio stream started.
+DEBUG 2025-12-08 15:07:18,506 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:07:33,525 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:07:33,570 - Audio recording completed in 15.05s
+DEBUG 2025-12-08 15:07:33,571 - Audio quality check - RMS: 0.1423, Peak: 1.0000
+DEBUG 2025-12-08 15:07:33,571 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:07:33,571 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:07:33,572 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:07:33,572 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:07:33,581 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:07:33,585 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:07:36,402 - Segment 1: [0.00s-5.24s] avg_logprob=-0.352, no_speech_prob=0.081, text='How are you?'
+DEBUG 2025-12-08 15:07:36,402 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:07:36,403 - Transcription result: 'How are you?' (1/1 segments used)
+DEBUG 2025-12-08 15:07:36,403 - Transcription successful on attempt 1: 'How are you?'
+DEBUG 2025-12-08 15:07:36,403 - Transcription completed in 2.83s
+DEBUG 2025-12-08 15:07:36,403 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:07:36,403 - You: How are you?
+DEBUG 2025-12-08 15:07:36,403 - Sending to LLM
+DEBUG 2025-12-08 15:07:36,405 - close.started
+DEBUG 2025-12-08 15:07:36,406 - close.complete
+DEBUG 2025-12-08 15:07:36,406 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:07:36,406 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b599280>
+DEBUG 2025-12-08 15:07:36,407 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:07:36,407 - send_request_headers.complete
+DEBUG 2025-12-08 15:07:36,407 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:07:36,408 - send_request_body.complete
+DEBUG 2025-12-08 15:07:36,408 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:07:40,948 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:07:40 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:07:40,949 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:07:40,949 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:07:46,244 - Queuing sentence for TTS: 'Powered up and ready to assist – my circuits are b...'
+DEBUG 2025-12-08 15:07:46,687 - receive_response_body.complete
+DEBUG 2025-12-08 15:07:46,688 - response_closed.started
+DEBUG 2025-12-08 15:07:46,688 - response_closed.complete
+DEBUG 2025-12-08 15:07:46,688 - LLM streaming completed in 10.28s (18 tokens)
+DEBUG 2025-12-08 15:07:46,689 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:07:50,742 - Conversation #7 completed in 33.20s
+DEBUG 2025-12-08 15:07:50,753 - Audio stream started.
+INFO 2025-12-08 15:07:50,753 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:07:57,417 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:07:57,458 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
+INFO 2025-12-08 15:07:57,458 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.00)
+DEBUG 2025-12-08 15:07:57,508 - Playing acknowledgment
+DEBUG 2025-12-08 15:07:58,258 - Starting audio recording for command
+DEBUG 2025-12-08 15:07:58,270 - Audio stream started.
+DEBUG 2025-12-08 15:07:58,609 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:08:13,628 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:08:13,674 - Audio recording completed in 15.06s
+DEBUG 2025-12-08 15:08:13,675 - Audio quality check - RMS: 0.1271, Peak: 1.0000
+DEBUG 2025-12-08 15:08:13,675 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:08:13,675 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:08:13,676 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:08:13,676 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:08:13,686 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:08:13,690 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:08:16,694 - Segment 1: [0.00s-7.00s] avg_logprob=-0.487, no_speech_prob=0.064, text='That's a good baseline question.'
+DEBUG 2025-12-08 15:08:16,694 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:08:16,694 - Transcription result: 'That's a good baseline question.' (1/1 segments used)
+DEBUG 2025-12-08 15:08:16,694 - Transcription successful on attempt 1: 'That's a good baseline question.'
+DEBUG 2025-12-08 15:08:16,695 - Transcription completed in 3.02s
+DEBUG 2025-12-08 15:08:16,695 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:08:16,695 - You: That's a good baseline question.
+DEBUG 2025-12-08 15:08:16,695 - Sending to LLM
+DEBUG 2025-12-08 15:08:16,696 - close.started
+DEBUG 2025-12-08 15:08:16,699 - close.complete
+DEBUG 2025-12-08 15:08:16,699 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:08:16,700 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a2812bfb0>
+DEBUG 2025-12-08 15:08:16,700 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:16,701 - send_request_headers.complete
+DEBUG 2025-12-08 15:08:16,701 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:16,701 - send_request_body.complete
+DEBUG 2025-12-08 15:08:16,701 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:22,220 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:08:22 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:08:22,221 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:08:22,221 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:22,835 - Queuing sentence for TTS: 'Agreed!...'
+DEBUG 2025-12-08 15:08:25,738 - Queuing sentence for TTS: 'It sets the tone for a sparkling conversation!...'
+DEBUG 2025-12-08 15:08:26,198 - receive_response_body.complete
+DEBUG 2025-12-08 15:08:26,198 - response_closed.started
+DEBUG 2025-12-08 15:08:26,199 - response_closed.complete
+DEBUG 2025-12-08 15:08:26,199 - LLM streaming completed in 9.50s (13 tokens)
+DEBUG 2025-12-08 15:08:26,199 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:08:28,684 - Conversation #8 completed in 31.23s
+DEBUG 2025-12-08 15:08:28,696 - Audio stream started.
+INFO 2025-12-08 15:08:28,696 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:08:28,833 - Wakeword candidate detected (score: 0.99, consecutive: 1/2)
+DEBUG 2025-12-08 15:08:28,871 - Wakeword candidate detected (score: 0.99, consecutive: 2/2)
+INFO 2025-12-08 15:08:28,871 - Wakeword detected! (score: 0.99, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.99, 0.99)
+DEBUG 2025-12-08 15:08:28,924 - Playing acknowledgment
+DEBUG 2025-12-08 15:08:29,562 - Starting audio recording for command
+DEBUG 2025-12-08 15:08:29,573 - Audio stream started.
+DEBUG 2025-12-08 15:08:29,895 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:08:44,914 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:08:44,958 - Audio recording completed in 15.04s
+DEBUG 2025-12-08 15:08:44,959 - Audio quality check - RMS: 0.1335, Peak: 1.0000
+DEBUG 2025-12-08 15:08:44,959 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:08:44,959 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:08:44,960 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:08:44,960 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:08:44,974 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:08:44,974 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:08:47,909 - Segment 1: [0.00s-4.40s] avg_logprob=-0.399, no_speech_prob=0.097, text='How old are you?'
+DEBUG 2025-12-08 15:08:47,909 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:08:47,910 - Transcription result: 'How old are you?' (1/1 segments used)
+DEBUG 2025-12-08 15:08:47,910 - Transcription successful on attempt 1: 'How old are you?'
+DEBUG 2025-12-08 15:08:47,910 - Transcription completed in 2.95s
+DEBUG 2025-12-08 15:08:47,910 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:08:47,910 - You: How old are you?
+DEBUG 2025-12-08 15:08:47,911 - Sending to LLM
+DEBUG 2025-12-08 15:08:47,913 - close.started
+DEBUG 2025-12-08 15:08:47,913 - close.complete
+DEBUG 2025-12-08 15:08:47,913 - connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+DEBUG 2025-12-08 15:08:47,914 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f6a1b5ea720>
+DEBUG 2025-12-08 15:08:47,914 - send_request_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:47,915 - send_request_headers.complete
+DEBUG 2025-12-08 15:08:47,915 - send_request_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:47,915 - send_request_body.complete
+DEBUG 2025-12-08 15:08:47,915 - receive_response_headers.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:52,885 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Mon, 08 Dec 2025 20:08:52 GMT'), (b'Transfer-Encoding', b'chunked')])
+INFO 2025-12-08 15:08:52,885 - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+DEBUG 2025-12-08 15:08:52,886 - receive_response_body.started request=<Request [b'POST']>
+DEBUG 2025-12-08 15:08:59,493 - Queuing sentence for TTS: 'My "age" is measured in code updates, not years – ...'
+DEBUG 2025-12-08 15:08:59,913 - receive_response_body.complete
+DEBUG 2025-12-08 15:08:59,913 - response_closed.started
+DEBUG 2025-12-08 15:08:59,913 - response_closed.complete
+DEBUG 2025-12-08 15:08:59,914 - LLM streaming completed in 12.00s (22 tokens)
+DEBUG 2025-12-08 15:08:59,914 - Waiting for TTS to complete
+DEBUG 2025-12-08 15:09:05,080 - Conversation #9 completed in 36.21s
+DEBUG 2025-12-08 15:09:05,092 - Audio stream started.
+INFO 2025-12-08 15:09:05,093 - Ready! Listening for 'hey jarvis'...
+DEBUG 2025-12-08 15:09:05,226 - Wakeword candidate detected (score: 0.59, consecutive: 1/2)
+DEBUG 2025-12-08 15:09:05,272 - Wakeword detection sequence broken (score: 0.00)
+DEBUG 2025-12-08 15:10:49,762 - Wakeword candidate detected (score: 1.00, consecutive: 1/2)
+DEBUG 2025-12-08 15:10:49,802 - Wakeword candidate detected (score: 1.00, consecutive: 2/2)
+INFO 2025-12-08 15:10:49,803 - Wakeword detected! (score: 1.00, recent: 0.00, 0.00, 0.00, 0.00, 0.00, 0.01, 0.01, 0.01, 1.00, 1.00)
+DEBUG 2025-12-08 15:10:49,852 - Playing acknowledgment
+DEBUG 2025-12-08 15:10:50,511 - Starting audio recording for command
+DEBUG 2025-12-08 15:10:50,524 - Audio stream started.
+DEBUG 2025-12-08 15:10:50,847 - Speech started, using 0 pre-buffer chunks
+DEBUG 2025-12-08 15:11:05,866 - Max phrase duration of 15.0s exceeded. Forcing stop.
+DEBUG 2025-12-08 15:11:05,911 - Audio recording completed in 15.04s
+DEBUG 2025-12-08 15:11:05,912 - Audio quality check - RMS: 0.0867, Peak: 1.0000
+DEBUG 2025-12-08 15:11:05,912 - Starting transcription (thresholds: logprob=-1.3, no_speech=0.75)
+DEBUG 2025-12-08 15:11:05,912 - Transcription attempt 1/2
+DEBUG 2025-12-08 15:11:05,912 - Starting Whisper transcription (audio length: 240480 samples, 15.03s)
+INFO 2025-12-08 15:11:05,912 - Processing audio with duration 00:15.030
+DEBUG 2025-12-08 15:11:05,924 - Transcription info - language: en, language_probability: 1.00
+DEBUG 2025-12-08 15:11:05,925 - Processing segment at 00:00.000
+DEBUG 2025-12-08 15:11:08,768 - Segment 1: [0.00s-4.56s] avg_logprob=-0.544, no_speech_prob=0.034, text='Goodbye.'
+DEBUG 2025-12-08 15:11:08,768 -   ✓ Segment accepted
+DEBUG 2025-12-08 15:11:08,769 - Transcription result: 'Goodbye.' (1/1 segments used)
+DEBUG 2025-12-08 15:11:08,769 - Transcription successful on attempt 1: 'Goodbye.'
+DEBUG 2025-12-08 15:11:08,769 - Transcription completed in 2.86s
+DEBUG 2025-12-08 15:11:08,769 - No wake word pattern found, keeping original text
+INFO 2025-12-08 15:11:08,769 - You: Goodbye.
+DEBUG 2025-12-08 15:11:08,769 - Exit command detected
+DEBUG 2025-12-08 15:11:09,536 - Starting cleanup
+DEBUG 2025-12-08 15:11:09,552 - Closing Whisper transcriber
+DEBUG 2025-12-08 15:11:09,570 - Cleanup complete
+DEBUG 2025-12-08 15:11:09,891 - --- Top 10 Memory Allocations ---
+DEBUG 2025-12-08 15:11:09,891 - /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/openwakeword/utils.py:298: size=6037 KiB, count=154436, average=40 B
+DEBUG 2025-12-08 15:11:09,891 - <frozen importlib._bootstrap_external>:757: size=1465 KiB, count=9114, average=165 B
+DEBUG 2025-12-08 15:11:09,891 - /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/numpy/_core/shape_base.py:292: size=290 KiB, count=4, average=72.6 KiB
+DEBUG 2025-12-08 15:11:09,891 - /usr/lib64/python3.12/dataclasses.py:473: size=262 KiB, count=2359, average=114 B
+DEBUG 2025-12-08 15:11:09,891 - /usr/lib64/python3.12/inspect.py:3076: size=63.7 KiB, count=977, average=67 B
+DEBUG 2025-12-08 15:11:09,891 - /usr/lib64/python3.12/dataclasses.py:424: size=49.6 KiB, count=423, average=120 B
+DEBUG 2025-12-08 15:11:09,892 - /home/steve/git-projects/ollama-STT-TTS/venv/lib64/python3.12/site-packages/onnxruntime/capi/onnxruntime_inference_collection.py:287: size=44.8 KiB, count=583, average=79 B
+DEBUG 2025-12-08 15:11:09,892 - <string>:2: size=42.3 KiB, count=303, average=143 B
+DEBUG 2025-12-08 15:11:09,892 - /usr/lib64/python3.12/inspect.py:2471: size=26.8 KiB, count=429, average=64 B
+DEBUG 2025-12-08 15:11:09,892 - /usr/lib64/python3.12/enum.py:595: size=26.4 KiB, count=89, average=304 B
+DEBUG 2025-12-08 15:11:09,892 - ---------------------------------
+DEBUG 2025-12-08 15:11:09,923 - close.started
+DEBUG 2025-12-08 15:11:09,923 - close.complete

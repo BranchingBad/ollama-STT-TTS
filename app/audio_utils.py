@@ -43,6 +43,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'memory_profiling': False,
     'trim_wake_word': True,
     'max_phrase_duration': 15.0,
+    'gain': 1.0,
 }       
 
 # --- 3. Audio Helpers (Updated for sounddevice) ---

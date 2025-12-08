@@ -15,6 +15,7 @@ pre_buffer_ms = 400
 system_prompt = You are a friendly, concise, and intelligent voice assistant named GLaDOS. Keep your responses short and witty.
 device_index = None
 piper_output_device_index = None
+gain = 1.0 # Mic input gain. 1.0 = no change.
 max_words_per_command = 65
 max_phrase_duration = 20.0 # How long to record a command before stopping
 
