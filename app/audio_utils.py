@@ -37,6 +37,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'whisper_compute_type': 'int8',
     'max_history_tokens': 2048,
     'audio_buffer_size': DEFAULT_AUDIO_BUFFER_SIZE,  # FIX #2: Added buffer size config
+    'gc_interval': 10,
+    'memory_profiling': False,
 }       
 
 # --- 3. Audio Helpers (Updated for sounddevice) ---
@@ -71,3 +73,18 @@ def list_audio_output_devices() -> None:
     except Exception as e:
         sys.stdout.write(f"Error listing output devices: {e}\n")
     sys.stdout.write("--------------------------------------------------\n")
+
+# --- 4. Memory Profiling Helper ---
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
+def monitor_memory() -> float:
+    """Optional memory monitoring for debugging. Returns RSS in MB."""
+    if not PSUTIL_AVAILABLE:
+        return 0.0
+    process = psutil.Process()
+    mem_info = process.memory_info()
+    return mem_info.rss / 1024 / 1024  # MB

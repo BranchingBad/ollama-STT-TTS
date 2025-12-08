@@ -9,6 +9,7 @@ Loads configuration, initializes, and runs the VoiceAssistant class.
 
 import logging
 import sys
+import tracemalloc
 
 # --- IMPROVEMENT: Top-Level Dependency Check ---
 # Encapsulate critical imports to provide clear error messages if dependencies are missing.
@@ -45,10 +46,14 @@ def main() -> None:
         print(f"FATAL: Could not set up logging: {e}", file=sys.stderr)
         sys.exit(1)
 
+    args, _, should_exit = load_config_and_args()
+
+    # Optional detailed memory tracing
+    if args.debug:
+        tracemalloc.start()
+
     assistant: VoiceAssistant | None = None
     try:
-        args, _, should_exit = load_config_and_args()
-
         # Handle device listing exit flag
         if should_exit:
             # config_manager has already printed the device list.
@@ -79,6 +84,15 @@ def main() -> None:
         # Ensure cleanup runs even if initialization failed
         if assistant:
             assistant.cleanup()
+        
+        # Log memory usage if enabled
+        if args.debug and tracemalloc.is_tracing():
+            snapshot = tracemalloc.take_snapshot()
+            top_stats = snapshot.statistics('lineno')
+            logging.debug("--- Top 10 Memory Allocations ---")
+            for stat in top_stats[:10]:
+                logging.debug(stat)
+            logging.debug("---------------------------------")
 
 
 if __name__ == "__main__":

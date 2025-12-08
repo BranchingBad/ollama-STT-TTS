@@ -58,6 +58,7 @@ class AudioInput:
             return None
 
     def clear_buffer(self):
+        """Clears all items from the audio buffer."""
         with self.stream_buffer.mutex:
             self.stream_buffer.queue.clear()
 

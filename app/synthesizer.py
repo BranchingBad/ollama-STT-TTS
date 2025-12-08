@@ -6,6 +6,7 @@ import threading
 import time
 import numpy as np
 import sounddevice as sd
+from scipy.signal import resample
 from piper import PiperVoice
 from audio_utils import RATE, MAX_TTS_ERRORS
 
@@ -45,26 +46,35 @@ class Synthesizer:
 
     def _worker(self):
         consecutive_errors = 0
+        target_sample_rate = 48000  # Match device default sample rate
+        
         while not self.stop_event.is_set():
-            # FIX: Explicitly reset text to None at the start of every iteration
-            # to prevent variable leakage from previous turns.
             text = None
-            
             try:
                 text = self.queue.get(timeout=0.1)
-                if text is None: break
+                if text is None:
+                    break
 
                 self.is_speaking_event.set()
                 with sd.OutputStream(
-                    samplerate=self.sample_rate,
+                    samplerate=target_sample_rate,
                     device=self.args.piper_output_device_index,
                     channels=1,
                     dtype='int16'
                 ) as stream:
                     for audio_chunk in self.voice.synthesize(text):
-                        if self.interrupt_event.is_set(): break
-                        stream.write(np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16))
-                
+                        if self.interrupt_event.is_set():
+                            break
+                        
+                        audio_np = np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16)
+                        
+                        # Resample if necessary
+                        if self.sample_rate != target_sample_rate:
+                            num_samples = round(len(audio_np) * target_sample_rate / self.sample_rate)
+                            audio_np = resample(audio_np, num_samples)
+                        
+                        stream.write(audio_np.astype(np.int16))
+
                 consecutive_errors = 0
             except queue.Empty:
                 continue
@@ -86,10 +96,18 @@ class Synthesizer:
             self.queue.put(text)
 
     def stop(self):
+        """Ensure all resources are released on shutdown"""
         self.stop_event.set()
-        self.queue.put(None)
-        self.thread.join()
+        self.clear_queue()  # Clear before stopping
+        self.queue.put(None) # Sentinel to stop the worker
+        self.thread.join(timeout=5.0)
+
+        # Clean up voice model
+        if self.voice:
+            del self.voice
+            self.voice = None
 
     def clear_queue(self):
+        """Clears all items from the synthesizer queue."""
         with self.queue.mutex:
             self.queue.queue.clear()

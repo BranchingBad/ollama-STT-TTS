@@ -132,6 +132,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     config_models = config['Models'] if 'Models' in config else {}
     config_func = config['Functionality'] if 'Functionality' in config else {}
+    config_perf = config['Performance'] if 'Performance' in config else {}
 
     def get_config_val(section: configparser.SectionProxy, key: str, default: Any, type_converter: type) -> Any:
         if not config_loaded:
@@ -176,6 +177,11 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--max-history-tokens', type=int, help="Maximum token context for chat history.")
     func_group.add_argument('--audio-buffer-size', type=int, help="Size of the audio buffer queue.")
 
+    perf_group = parser.add_argument_group('Performance')
+    perf_group.add_argument('--gc-interval', type=int, help="Force garbage collection every N conversations.")
+    perf_group.add_argument('--memory-profiling', action='store_true', help="Enable memory profiling in debug mode.")
+
+
     parser.set_defaults(
         ollama_model=get_config_val(config_models, 'ollama_model', DEFAULT_SETTINGS['ollama_model'], str),
         whisper_model=get_config_val(config_models, 'whisper_model', DEFAULT_SETTINGS['whisper_model'], str),
@@ -195,7 +201,9 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         whisper_device=get_config_val(config_func, 'whisper_device', DEFAULT_SETTINGS['whisper_device'], str),
         whisper_compute_type=get_config_val(config_func, 'whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type'], str),
         max_history_tokens=get_config_val(config_func, 'max_history_tokens', DEFAULT_SETTINGS['max_history_tokens'], int),
-        audio_buffer_size=get_config_val(config_func, 'audio_buffer_size', DEFAULT_SETTINGS['audio_buffer_size'], int)
+        audio_buffer_size=get_config_val(config_func, 'audio_buffer_size', DEFAULT_SETTINGS['audio_buffer_size'], int),
+        gc_interval=get_config_val(config_perf, 'gc_interval', DEFAULT_SETTINGS['gc_interval'], int),
+        memory_profiling=get_config_val(config_perf, 'memory_profiling', DEFAULT_SETTINGS['memory_profiling'], bool)
     )
 
     args = parser.parse_args()

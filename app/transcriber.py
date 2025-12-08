@@ -39,16 +39,32 @@ class Transcriber:
 
     def _internal_transcribe(self, audio_np: npt.NDArray[np.float32]) -> str:
         segments, _ = self.model.transcribe(audio_np, language="en")
-        full_text = "".join(segment.text for segment in segments)
+        
+        # Filter segments by confidence
+        transcription = []
+        for segment in segments:
+            # The log probability is a negative number, so a higher value (closer to 0) is better.
+            # no_speech_prob is the probability of the segment being silence, so lower is better.
+            if segment.avg_logprob > -1.0 and segment.no_speech_prob < 0.6:
+                transcription.append(segment.text)
+            else:
+                logging.debug(f"Segment discarded: avg_logprob={segment.avg_logprob:.2f}, no_speech_prob={segment.no_speech_prob:.2f}, text='{segment.text.strip()}'")
+
+        if not transcription:
+            logging.warning("No speech detected or transcription confidence too low.")
+            return ""
+
+        full_text = "".join(transcription)
         return full_text.strip()
 
     def transcribe(self, audio_np: npt.NDArray[np.float32]) -> str:
-        """Runs transcription with a timeout."""
+        """Runs transcription with a timeout and memory cleanup."""
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self._internal_transcribe, audio_np)
         
         try:
-            return future.result(timeout=TRANSCRIPTION_TIMEOUT_SECONDS)
+            result = future.result(timeout=TRANSCRIPTION_TIMEOUT_SECONDS)
+            return result
         except TimeoutError:
             logging.error("Transcription timed out.")
             return ""
@@ -57,6 +73,9 @@ class Transcriber:
             return ""
         finally:
             executor.shutdown(wait=False)
+            # Clear CUDA cache if using GPU
+            if self.device == 'cuda' and TORCH_AVAILABLE:
+                torch.cuda.empty_cache()
 
     def close(self):
         if hasattr(self, 'model'):

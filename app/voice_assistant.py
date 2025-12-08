@@ -1,23 +1,23 @@
-#!/usr/bin/env python3
-
 import logging
 import threading
 import time
 import numpy as np
 from openwakeword.model import Model
 import os
+import gc
 
 # Import our new modules
 from audio_input import AudioInput
 from transcriber import Transcriber
 from synthesizer import Synthesizer
 from llm_handler import LLMHandler
-from audio_utils import SENTENCE_END_PUNCTUATION
+from audio_utils import SENTENCE_END_PUNCTUATION, monitor_memory
 
 class VoiceAssistant:
     def __init__(self, args, client):
         self.args = args
         self.interrupt_event = threading.Event()
+        self.conversation_count = 0
         
         # Initialize Subsystems
         self.audio = AudioInput(args)
@@ -59,6 +59,11 @@ class VoiceAssistant:
             self.cleanup()
 
     def _handle_conversation(self):
+        # Optional memory profiling
+        mem_before = 0
+        if self.args.debug and self.args.memory_profiling:
+            mem_before = monitor_memory()
+
         self.audio.stop()
         self.tts.speak("Yes?")
         self.tts.queue.join()
@@ -79,6 +84,9 @@ class VoiceAssistant:
         # Transcribe
         user_text = self.transcriber.transcribe(audio_np)
         logging.info(f"You: {user_text}")
+        
+        # Explicitly release audio data from memory
+        del audio_np
         
         if not user_text.strip():
             self.audio.start() # Ensure we start listening again before exiting
@@ -109,6 +117,20 @@ class VoiceAssistant:
             self.tts.speak(sentence_buffer.strip())
             
         self.tts.queue.join() # Wait for speech to finish
+        
+        # After conversation completes
+        self.conversation_count += 1
+        
+        # Periodic aggressive cleanup
+        if self.args.gc_interval > 0 and self.conversation_count % self.args.gc_interval == 0:
+            gc.collect()
+            logging.debug("Periodic garbage collection triggered")
+
+        # Optional memory profiling
+        if self.args.debug and self.args.memory_profiling and mem_before > 0:
+            mem_after = monitor_memory()
+            logging.debug(f"Memory delta for conversation: {mem_after - mem_before:.2f} MB")
+            
         self.audio.start()
 
     def cleanup(self):
