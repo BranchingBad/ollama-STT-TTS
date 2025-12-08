@@ -16,6 +16,8 @@ system_prompt = You are a friendly, concise, and intelligent voice assistant nam
 device_index = None
 piper_output_device_index = None
 max_words_per_command = 65
+max_phrase_duration = 20.0 # How long to record a command before stopping
+
 
 # --- GPU Optimizations for Faster Computer ---
 whisper_device = cuda

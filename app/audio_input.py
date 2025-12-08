@@ -69,6 +69,8 @@ class AudioInput:
         is_speaking = False
         pre_buffer = []
         start_time = time.time()
+        speech_start_time = None
+        max_phrase_seconds = self.args.max_phrase_duration
         
         self.clear_buffer()
 
@@ -85,6 +87,11 @@ class AudioInput:
             is_speech = self.vad.is_speech(data, RATE)
 
             if is_speaking:
+                # SAFETY: Stop recording if the phrase is too long (e.g., constant noise)
+                if time.time() - speech_start_time > max_phrase_seconds:
+                    logging.debug(f"Max phrase duration of {max_phrase_seconds}s exceeded. Forcing stop.")
+                    break
+
                 frames.append(data)
                 if not is_speech:
                     silent_chunks += 1
@@ -94,6 +101,8 @@ class AudioInput:
                     silent_chunks = 0
             elif is_speech:
                 is_speaking = True
+                speech_start_time = time.time()
+                logging.debug(f"Speech started, using {len(pre_buffer)} pre-buffer chunks")
                 frames.extend(pre_buffer)
                 frames.append(data)
             else:

@@ -172,6 +172,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     func_group.add_argument('--device-index', type=device_index_type, help="Index of the audio input device.")
     func_group.add_argument('--piper-output-device-index', type=device_index_type, help="Index of the audio output device.")
     func_group.add_argument('--max-words-per-command', type=int, help="Maximum words allowed in a command.")
+    func_group.add_argument('--max-phrase-duration', type=float, help="Maximum duration for a spoken phrase in seconds.")
     func_group.add_argument('--whisper-device', type=str, help="Device for Whisper (e.g., 'cpu', 'cuda').")
     func_group.add_argument('--whisper-compute-type', type=str, help="Compute type for Whisper (e.g., 'int8').")
     func_group.add_argument('--whisper-avg-logprob', type=float, help="Whisper avg_logprob threshold.")
@@ -201,6 +202,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         device_index=get_config_val(config_func, 'device_index', DEFAULT_SETTINGS['device_index'], int),
         piper_output_device_index=get_config_val(config_func, 'piper_output_device_index', DEFAULT_SETTINGS['piper_output_device_index'], int),
         max_words_per_command=get_config_val(config_func, 'max_words_per_command', DEFAULT_SETTINGS['max_words_per_command'], int),
+        max_phrase_duration=get_config_val(config_func, 'max_phrase_duration', DEFAULT_SETTINGS['max_phrase_duration'], float),
         whisper_device=get_config_val(config_func, 'whisper_device', DEFAULT_SETTINGS['whisper_device'], str),
         whisper_compute_type=get_config_val(config_func, 'whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type'], str),
         whisper_avg_logprob=get_config_val(config_func, 'whisper_avg_logprob', DEFAULT_SETTINGS['whisper_avg_logprob'], float),
