@@ -55,14 +55,10 @@ class AudioInput:
             if self.args.gain != 1.0:
                 # Ensure gain is not negative
                 gain = max(0.0, self.args.gain) # Ensure gain is non-negative
-                original_peak = np.max(np.abs(indata))
                 
                 # Convert to float32, apply gain, then clamp to int16 range before converting back
                 indata_float = indata.astype(np.float32) * gain
                 indata = np.clip(indata_float, -INT16_MAX, INT16_MAX).astype(np.int16)
-                
-                new_peak = np.max(np.abs(indata))
-                logging.debug(f"Applied gain {gain:.2f}. Original peak: {original_peak:.0f}, New peak: {new_peak:.0f}")
 
             self.stream_buffer.put_nowait(indata.tobytes())
         except queue.Full:
