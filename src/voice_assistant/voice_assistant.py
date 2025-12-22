@@ -8,11 +8,11 @@ import gc
 import re
 
 # Import our new modules
-from audio_input import AudioInput
-from transcriber import Transcriber
-from synthesizer import Synthesizer
-from llm_handler import LLMHandler
-from audio_utils import SENTENCE_END_PUNCTUATION, monitor_memory
+from .audio_input import AudioInput
+from .transcriber import Transcriber
+from .synthesizer import Synthesizer
+from .llm_handler import LLMHandler
+from .audio_utils import SENTENCE_END_PUNCTUATION, monitor_memory
 
 class VoiceAssistant:
     def __init__(self, args, client):
@@ -27,8 +27,7 @@ class VoiceAssistant:
         self.consecutive_detection_count = 0
         self.required_consecutive = 2  # Confirmations needed
         
-        logging.debug(f"VoiceAssistant init - cooldown: {self.wakeword_cooldown}s, "
-                     f"required consecutive: {self.required_consecutive}")
+        logging.debug(f"VoiceAssistant init - cooldown: {self.wakeword_cooldown}s, required consecutive: {self.required_consecutive}")
         
         # Initialize Subsystems
         self.audio = AudioInput(args)
@@ -92,9 +91,7 @@ class VoiceAssistant:
                         # Require consistent detection to reduce false positives
                         self.consecutive_detection_count += 1
                         
-                        logging.debug(f"Wakeword candidate detected (score: {score:.2f}, "
-                                    f"avg: {avg_score:.2f}, "
-                                    f"consecutive: {self.consecutive_detection_count}/{self.required_consecutive})")
+                        logging.debug(f"Wakeword candidate detected (score: {score:.2f}, avg: {avg_score:.2f}, consecutive: {self.consecutive_detection_count}/{self.required_consecutive})")
                         
                         # IMPROVEMENT: Require both high instant score AND good average
                         if (self.consecutive_detection_count >= self.required_consecutive and 
@@ -102,8 +99,7 @@ class VoiceAssistant:
                             
                             # Log recent score history
                             recent_scores = [f"{s:.2f}" for s in score_history[-10:]]
-                            logging.info(f"Wakeword detected! (score: {score:.2f}, avg: {avg_score:.2f}, "
-                                       f"recent: {', '.join(recent_scores)})")
+                            logging.info(f"Wakeword detected! (score: {score:.2f}, avg: {avg_score:.2f}, recent: {', '.join(recent_scores)})")
                             
                             self.last_wakeword_time = current_time
                             self.consecutive_detection_count = 0
@@ -118,8 +114,7 @@ class VoiceAssistant:
                             logging.info(f"Ready! Listening for '{self.args.wakeword}'...")
                     else:
                         time_since_last = current_time - self.last_wakeword_time
-                        logging.debug(f"Wakeword in cooldown period (score: {score:.2f}, "
-                                    f"time since last: {time_since_last:.2f}s)")
+                        logging.debug(f"Wakeword in cooldown period (score: {score:.2f}, time since last: {time_since_last:.2f}s)")
                 else:
                     # Reset consecutive count if score drops below threshold
                     if self.consecutive_detection_count > 0:
@@ -279,7 +274,7 @@ class VoiceAssistant:
                 if any(p in token for p in SENTENCE_END_PUNCTUATION):
                     sentence = sentence_buffer.strip()
                     if sentence:
-                        logging.debug(f"Queuing sentence for TTS: '{sentence[:50]}...'")
+                        logging.debug(f"Queuing sentence for TTS: '{sentence[:50]}...'" )
                         self.tts.speak(sentence)
                     sentence_buffer = ""
             
@@ -327,8 +322,7 @@ class VoiceAssistant:
             (original_logprob - 0.3, original_nospeech + 0.2),
         ]
         
-        logging.debug(f"Starting transcription (initial thresholds: logprob={original_logprob}, "
-                     f"no_speech={original_nospeech})")
+        logging.debug(f"Starting transcription (initial thresholds: logprob={original_logprob}, no_speech={original_nospeech})")
         
         for attempt in range(min(max_retries, len(threshold_steps))):
             logprob_threshold, nospeech_threshold = threshold_steps[attempt]
@@ -337,8 +331,7 @@ class VoiceAssistant:
             self.args.whisper_avg_logprob = logprob_threshold
             self.args.whisper_no_speech_prob = nospeech_threshold
             
-            logging.debug(f"Transcription attempt {attempt + 1}/{max_retries} "
-                         f"(logprob={logprob_threshold:.2f}, no_speech={nospeech_threshold:.2f})")
+            logging.debug(f"Transcription attempt {attempt + 1}/{max_retries} (logprob={logprob_threshold:.2f}, no_speech={nospeech_threshold:.2f})")
             
             user_text = self.transcriber.transcribe(audio_np)
             

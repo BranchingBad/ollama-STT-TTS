@@ -21,20 +21,19 @@ from typing import Any, Tuple, Optional
 
 # Import defaults and helpers from audio_utils
 try:
-    from audio_utils import (
+    from .audio_utils import (
         DEFAULT_SETTINGS,
         list_audio_input_devices,
         list_audio_output_devices
     )
 except ImportError:
-    print("FATAL ERROR: Could not import from audio_utils.py. Ensure the file is present.")
+    print("FATAL ERROR: Could not import from audio_utils.py. Ensure the file is present and the package is installed correctly.")
     sys.exit(1)
 
 # --- Start of new robust path handling logic ---
 
 # The absolute path to the project's root directory.
-# This assumes the script is located in the 'app/' directory.
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 CONFIG_FILE_NAME = os.path.join(PROJECT_ROOT, 'config.ini')
 

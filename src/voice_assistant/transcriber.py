@@ -40,8 +40,7 @@ class Transcriber:
 
     def _internal_transcribe(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Internal transcription with detailed logging."""
-        logging.debug(f"Starting Whisper transcription (audio length: {len(audio_np)} samples, "
-                     f"{len(audio_np)/16000:.2f}s)")
+        logging.debug(f"Starting Whisper transcription (audio length: {len(audio_np)} samples, {len(audio_np)/16000:.2f}s)")
         
         try:
             segments, info = self.model.transcribe(
@@ -53,8 +52,7 @@ class Transcriber:
                 compression_ratio_threshold=None
             )
             
-            logging.debug(f"Transcription info - language: {info.language}, "
-                         f"language_probability: {info.language_probability:.2f}")
+            logging.debug(f"Transcription info - language: {info.language}, language_probability: {info.language_probability:.2f}")
             
             # Process segments with detailed logging
             transcription = []
@@ -65,11 +63,7 @@ class Transcriber:
                 segment_count += 1
                 
                 # Log each segment for debugging
-                logging.debug(f"Segment {segment_count}: "
-                            f"[{segment.start:.2f}s-{segment.end:.2f}s] "
-                            f"avg_logprob={segment.avg_logprob:.3f}, "
-                            f"no_speech_prob={segment.no_speech_prob:.3f}, "
-                            f"text='{segment.text.strip()}'")
+                logging.debug(f"""Segment {segment_count}: [{segment.start:.2f}s-{segment.end:.2f}s] avg_logprob={segment.avg_logprob:.3f}, no_speech_prob={segment.no_speech_prob:.3f}, text='{segment.text.strip()}'""")
                 
                 # Check confidence thresholds
                 if segment.avg_logprob > self.args.whisper_avg_logprob and \
@@ -90,8 +84,7 @@ class Transcriber:
                 return ""
 
             full_text = "".join(transcription)
-            logging.debug(f"Transcription result: '{full_text.strip()}' "
-                         f"({len(transcription)}/{segment_count} segments used)")
+            logging.debug(f"Transcription result: '{full_text.strip()}' ({len(transcription)}/{segment_count} segments used)")
             
             return full_text.strip()
             

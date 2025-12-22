@@ -70,9 +70,14 @@ source venv/bin/activate
 # venv\Scripts\activate
 ```
 
-Install the required Python libraries.
+Install the project. For regular use:
 ```bash
-pip install -r requirements.txt
+pip install .
+```
+
+For development (including testing dependencies):
+```bash
+pip install -e .[test]
 ```
 On the first run, the application will automatically download the required `faster-whisper` model.
 
@@ -82,7 +87,11 @@ You can run the assistant either locally with Python or via Docker. **All comman
 ### 🐍 A. Run Locally with Python
 Make sure your Ollama application is running. Then, start the assistant:
 ```bash
-python app/assistant.py
+python run.py
+```
+Or, if you have installed the package, you can use the entry point:
+```bash
+ollama-voice-assistant
 ```
 
 When ready, you will see the message: `Ready! Listening for 'hey jarvis'...
@@ -109,7 +118,7 @@ docker pull ghcr.io/branchingbad/ollama-stt-tts:latest
 **2. Prepare Configuration:**
 You will likely need to find the correct audio device index for the container to use. You can list the devices from your local (non-Docker) installation:
 ```bash
-python app/assistant.py --list-devices
+python run.py --list-devices
 ```
 Copy the `config.ini` file from the repository to a local directory and edit the `device_index` with the correct value from the command above.
 
@@ -134,10 +143,10 @@ Customize the assistant by editing `config.ini` or by providing command-line arg
 **Example Commands:**
 ```bash
 # Run with a different wakeword threshold and VAD aggressiveness
-python app/assistant.py --wakeword-threshold 0.5 --vad-aggressiveness 1
+python run.py --wakeword-threshold 0.5 --vad-aggressiveness 1
 
 # Run using a different Ollama model and input device
-python app/assistant.py --ollama-model mistral --device-index 2
+python run.py --ollama-model mistral --device-index 2
 ```
 
 **Common Arguments:**
@@ -152,3 +161,22 @@ python app/assistant.py --ollama-model mistral --device-index 2
 - `--system-prompt`: A custom system prompt or a path to a `.txt` file containing one.
 
 For a full list of configurable options, see the `[Models]` and `[Functionality]` sections in the `config.ini` file.
+
+## 🧪 5. Testing
+This project includes a suite of unit tests to ensure the reliability of its core components. The tests cover:
+-   Ollama connection
+-   Configuration management
+-   Audio utilities
+-   LLM handling
+-   Audio transcription
+-   Speech synthesis
+
+### Running the Tests
+To run the tests, first ensure you have installed the development dependencies:
+```bash
+pip install -e .[test]
+```
+Then, run `pytest` from the root of the project directory:
+```bash
+python3 -m pytest
+```

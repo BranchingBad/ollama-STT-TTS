@@ -8,7 +8,7 @@ import numpy as np
 import sounddevice as sd
 from scipy.signal import resample
 from piper import PiperVoice
-from audio_utils import RATE, MAX_TTS_ERRORS
+from .audio_utils import RATE, MAX_TTS_ERRORS
 
 class Synthesizer:
     def __init__(self, args, interrupt_event: threading.Event):

@@ -12,13 +12,14 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file first to leverage Docker layer caching
-COPY requirements.txt .
+# Copy the project files first to leverage Docker layer caching
+COPY pyproject.toml setup.py ./
+
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir .
 
 # Copy the application source code
-COPY app/ ./app/
+COPY src/ ./src/
 COPY config.ini .
 
 # Create a models directory and copy all models into it
@@ -27,4 +28,4 @@ RUN mkdir models
 COPY models/ ./models/
 
 # Command to run the application when the container starts
-CMD ["python3", "app/assistant.py"]
+CMD ["ollama-voice-assistant"]

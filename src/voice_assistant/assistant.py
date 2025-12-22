@@ -21,8 +21,8 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 # --- IMPROVEMENT: Top-Level Dependency Check ---
 # Encapsulate critical imports to provide clear error messages if dependencies are missing.
 try:
-    from config_manager import load_config_and_args, get_ollama_client
-    from voice_assistant import VoiceAssistant
+    from .config_manager import load_config_and_args, get_ollama_client
+    from .voice_assistant import VoiceAssistant
 except ImportError as e:
     print(
         f"FATAL: Missing required Python module: {e.name}. Please ensure all dependencies are installed (e.g., via pip install -r requirements.txt).",

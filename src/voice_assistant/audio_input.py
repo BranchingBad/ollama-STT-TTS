@@ -6,7 +6,7 @@ import time
 import numpy as np
 import sounddevice as sd
 import webrtcvad
-from audio_utils import (
+from .audio_utils import (
     FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX
 )
 

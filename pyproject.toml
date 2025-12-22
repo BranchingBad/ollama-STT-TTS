@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ollama-voice-assistant"
+version = "0.1.0"
+description = "A hands-free Python voice assistant that runs 100% locally with Ollama."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "ollama>=0.1.6",
+    "openwakeword",
+    "webrtcvad>=2.0.10",
+    "faster-whisper>=1.0.0",
+    "sounddevice>=0.4.6",
+    "piper-tts>=1.2.0",
+    "psutil",
+    "scipy",
+    "requests",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "unittest-xml-reporting",
+]
+
+[project.scripts]
+ollama-voice-assistant = "voice_assistant.assistant:main"
+
+[project.urls]
+"Homepage" = "https://github.com/BranchingBad/ollama-STT-TTS"
+"Bug Tracker" = "https://github.com/BranchingBad/ollama-STT-TTS/issues"
