@@ -41,7 +41,13 @@ class VoiceAssistant:
         
         logging.debug(f"Loading wakeword model from: {args.wakeword_model_path}")
         self.oww_model = Model(wakeword_model_paths=[args.wakeword_model_path])
-        self.wakeword_key = list(self.oww_model.models.keys())[0]
+        model_keys = list(self.oww_model.models.keys())
+        if not model_keys:
+            raise RuntimeError(
+                f"openWakeWord loaded no models from '{args.wakeword_model_path}'. "
+                "The file may be corrupt or incompatible."
+            )
+        self.wakeword_key = model_keys[0]
         logging.debug(f"Wakeword model loaded with key: {self.wakeword_key}")
 
     def run(self):
@@ -241,7 +247,8 @@ class VoiceAssistant:
                 logging.debug("Exit command detected")
                 self.tts.speak("Goodbye.")
                 self.tts.queue.join()
-                exit(0)
+                # Raise to let assistant.py's finally block run cleanup.
+                raise KeyboardInterrupt("User requested exit")
     
             # Check for history reset commands
             if "new chat" in user_text_lower or "reset chat" in user_text_lower:

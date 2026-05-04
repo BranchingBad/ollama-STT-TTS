@@ -12,19 +12,15 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the project files first to leverage Docker layer caching
-COPY pyproject.toml setup.py ./
+# Copy packaging metadata and source first so the package is installable.
+COPY pyproject.toml setup.py README.md ./
+COPY src/ ./src/
 
-# Install Python dependencies
+# Install Python dependencies (the package itself + its deps)
 RUN pip install --no-cache-dir .
 
-# Copy the application source code
-COPY src/ ./src/
+# Copy runtime assets (config + models) after the install layer
 COPY config.ini .
-
-# Create a models directory and copy all models into it
-# This includes the wakeword and the Piper TTS models
-RUN mkdir models
 COPY models/ ./models/
 
 # Command to run the application when the container starts

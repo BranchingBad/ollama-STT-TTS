@@ -120,7 +120,7 @@ class TestTranscriber(unittest.TestCase):
         
         mock_model_instance = mock_whisper_model.return_value
         mock_model_instance.transcribe.return_value = (
-            [good_segment, bad_logprob_.pysegment, bad_nospeech_segment], 
+            [good_segment, bad_logprob_segment, bad_nospeech_segment],
             mock_info
         )
 
