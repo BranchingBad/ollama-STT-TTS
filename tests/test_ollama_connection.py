@@ -175,13 +175,18 @@ import unittest
 
 
 class TestOllamaConnection(unittest.TestCase):
-    """Unit tests for Ollama connectivity."""
-    
+    """Integration tests for Ollama connectivity. Skipped when no live
+    Ollama server is reachable, so offline CI does not fail."""
+
     @classmethod
     def setUpClass(cls):
-        """Set up test fixtures."""
         cls.default_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         cls.tester = OllamaConnectionTester(cls.default_host)
+        probe = cls.tester.test_raw_http()
+        if not probe["success"]:
+            raise unittest.SkipTest(
+                f"Ollama not reachable at {cls.default_host}: {probe.get('error', 'unknown')}"
+            )
     
     def test_raw_http_connection(self):
         """Test raw HTTP connection to Ollama."""

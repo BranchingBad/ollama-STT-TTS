@@ -41,6 +41,9 @@ class TestSynthesizer(unittest.TestCase):
             patch('builtins.open', m_open),
             patch.object(synth_module, 'PiperVoice', create=True,
                          **{'load.return_value': self.mock_voice}),
+            # Pin the device sample rate so we don't try to resample 0-length
+            # mock audio with garbage sample rates from the sounddevice mock.
+            patch.object(Synthesizer, '_resolve_target_sample_rate', return_value=16000),
         ]
         if output_stream_mock is not None:
             patches.append(patch.object(synth_module.sd, 'OutputStream', output_stream_mock))
@@ -76,9 +79,12 @@ class TestSynthesizer(unittest.TestCase):
         synthesizer.stop()
 
     def test_interrupt(self):
+        # Real (non-empty) bytes so stream.write actually gets called for the
+        # first chunk. The interrupt then suppresses the second chunk.
+        sample_bytes = np.zeros(160, dtype=np.int16).tobytes()
         long_synthesis = [MagicMock() for _ in range(10)]
         for chunk in long_synthesis:
-            chunk.audio_int16_bytes = b''
+            chunk.audio_int16_bytes = sample_bytes
 
         def synth_side_effect(*_args):
             yield long_synthesis[0]
