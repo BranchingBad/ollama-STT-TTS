@@ -84,7 +84,22 @@ On the first run, the application will automatically download the required `fast
 ## ⌨️ 3. Running the Assistant
 You can run the assistant either locally with Python or via Docker. **All commands should be run from the root of the project directory.**
 
-### 🐍 A. Run Locally with Python
+### 🖱️ A. Run on Windows by double-clicking
+For day-to-day use on Windows, just **double-click [`start.bat`](start.bat)** in the project folder. The launcher will:
+- switch into the project directory,
+- pick up a `.venv\` / `venv\` Python if you have one (otherwise the system `python`),
+- check that Ollama is reachable, and
+- run `run.py`.
+
+The window stays open after exit so you can read any error before it closes.
+
+Helper launchers in the same folder:
+- **[`start-debug.bat`](start-debug.bat)** — same as `start.bat` but adds `--debug` for verbose logging. Use this when tuning the wake-word threshold or mic gain.
+- **[`list-devices.bat`](list-devices.bat)** — print available audio input/output devices and their indices, so you know what to put in `config.ini` (`device_index`, `piper_output_device_index`).
+
+To run from the desktop, right-click `start.bat` → *Send to* → *Desktop (create shortcut)*. You can rename and re-icon the shortcut as you like.
+
+### 🐍 B. Run Locally with Python
 Make sure your Ollama application is running. Then, start the assistant:
 ```bash
 python run.py
@@ -107,7 +122,7 @@ When ready, you will see the message: `Ready! Listening for 'hey jarvis'...
 - `"goodbye"` or `"exit"`: Stops the script.
 - `"new chat"` or `"reset chat"`: Clears the conversation history for the LLM.
 
-### 🐋 B. Run with Docker
+### 🐋 C. Run with Docker
 A pre-built Docker image is available on the GitHub Container Registry.
 
 **1. Pull the Image:**
