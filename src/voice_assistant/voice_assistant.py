@@ -1,19 +1,21 @@
+import gc
 import logging
+import os
+import re
 import threading
 import time
+
 import numpy as np
 from openwakeword.model import Model
-import os
-import gc
-import re
 
 # Import our new modules
 from .audio_input import AudioInput
-from .transcriber import Transcriber
-from .synthesizer import Synthesizer
-from .llm_handler import LLMHandler
 from .audio_utils import SENTENCE_END_PUNCTUATION, monitor_memory
+from .llm_handler import LLMHandler
+from .synthesizer import Synthesizer
+from .transcriber import Transcriber
 from .wakeword import WakewordDetector
+
 
 class VoiceAssistant:
     def __init__(self, args, client):

@@ -1,6 +1,7 @@
-import sounddevice as sd
+import sys  # Import sys for sys.stdout.write
 from typing import Any
-import sys # Import sys for sys.stdout.write
+
+import sounddevice as sd
 
 # --- 1. Audio Settings (Constants) ---
 FORMAT_NP: str = 'int16'          # Data type for sounddevice

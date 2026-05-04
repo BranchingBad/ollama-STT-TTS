@@ -1,10 +1,10 @@
-import unittest
-from unittest.mock import patch, MagicMock
-import sys
-import os
 import argparse
+import os
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
+
 import numpy as np
-import time
 
 # To import voice_assistant modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 MOCK_TORCH = MagicMock()
 sys.modules['torch'] = MOCK_TORCH
 
-from voice_assistant.transcriber import Transcriber, TRANSCRIPTION_TIMEOUT_SECONDS
+from voice_assistant.transcriber import TRANSCRIPTION_TIMEOUT_SECONDS, Transcriber
+
 
 class TestTranscriber(unittest.TestCase):
 

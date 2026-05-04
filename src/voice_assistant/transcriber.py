@@ -1,7 +1,8 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
 import numpy as np
 import numpy.typing as npt
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from faster_whisper import WhisperModel
 
 # Import torch for CUDA check

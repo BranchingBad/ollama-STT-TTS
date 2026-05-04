@@ -6,10 +6,11 @@ Standalone test script and unit tests for checking Ollama service availability.
 Can be run directly or with pytest.
 """
 
+import logging
 import os
 import sys
-import logging
-from typing import Optional, Dict, Any
+from typing import Any
+
 import ollama
 import requests
 
@@ -23,7 +24,7 @@ logging.basicConfig(
 class OllamaConnectionTester:
     """Test Ollama service connectivity with detailed diagnostics."""
     
-    def __init__(self, host: Optional[str] = None):
+    def __init__(self, host: str | None = None):
         """
         Initialize the tester.
         
@@ -35,7 +36,7 @@ class OllamaConnectionTester:
         self.host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         self.base_url = self.host.rstrip('/')
         
-    def test_raw_http(self) -> Dict[str, Any]:
+    def test_raw_http(self) -> dict[str, Any]:
         """Test raw HTTP connection without ollama client."""
         try:
             response = requests.get(
@@ -66,7 +67,7 @@ class OllamaConnectionTester:
                 "method": "raw_http"
             }
     
-    def test_ollama_client(self) -> Dict[str, Any]:
+    def test_ollama_client(self) -> dict[str, Any]:
         """Test using the ollama Python client."""
         try:
             client = ollama.Client(host=self.host)
@@ -87,7 +88,7 @@ class OllamaConnectionTester:
                 "method": "ollama_client"
             }
     
-    def test_health_endpoint(self) -> Dict[str, Any]:
+    def test_health_endpoint(self) -> dict[str, Any]:
         """Test the /api/health endpoint if available."""
         try:
             response = requests.get(
@@ -107,7 +108,7 @@ class OllamaConnectionTester:
                 "method": "health_endpoint"
             }
     
-    def run_all_tests(self) -> Dict[str, Any]:
+    def run_all_tests(self) -> dict[str, Any]:
         """Run all connection tests and return comprehensive results."""
         logging.info(f"Testing Ollama connection at: {self.host}")
         logging.info("=" * 60)
@@ -140,7 +141,7 @@ class OllamaConnectionTester:
         client_result = self.test_ollama_client()
         results["tests"]["ollama_client"] = client_result
         if client_result["success"]:
-            logging.info(f"✓ Ollama client connected successfully")
+            logging.info("✓ Ollama client connected successfully")
             logging.info(f"  Available models: {client_result['model_count']}")
             if client_result.get('models'):
                 for model in client_result['models']:
@@ -171,6 +172,7 @@ class OllamaConnectionTester:
 # ============================================================================
 
 import unittest
+
 
 class TestOllamaConnection(unittest.TestCase):
     """Unit tests for Ollama connectivity."""

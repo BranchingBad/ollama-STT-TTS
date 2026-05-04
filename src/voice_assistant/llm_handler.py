@@ -1,7 +1,10 @@
-import logging
-import ollama
 import gc
-from .audio_utils import MAX_HISTORY_MESSAGES, SENTENCE_END_PUNCTUATION
+import logging
+
+import ollama
+
+from .audio_utils import MAX_HISTORY_MESSAGES
+
 
 class LLMHandler:
     def __init__(self, client: ollama.Client, args):

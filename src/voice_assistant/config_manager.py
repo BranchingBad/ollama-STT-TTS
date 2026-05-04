@@ -11,21 +11,18 @@ FIXES APPLIED:
 - Added system prompt file size limit
 """
 
-import configparser
 import argparse
+import configparser
 import logging
-import sys
 import os
+import sys
+from typing import Any
+
 import ollama
-from typing import Any, Tuple, Optional
 
 # Import defaults and helpers from audio_utils
 try:
-    from .audio_utils import (
-        DEFAULT_SETTINGS,
-        list_audio_input_devices,
-        list_audio_output_devices
-    )
+    from .audio_utils import DEFAULT_SETTINGS, list_audio_input_devices, list_audio_output_devices
 except ImportError:
     print("FATAL ERROR: Could not import from audio_utils.py. Ensure the file is present and the package is installed correctly.")
     sys.exit(1)
@@ -103,7 +100,7 @@ def sanitize_file_path(file_path: str, description: str = "file") -> str:
             
     return abs_path
 
-def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
+def get_ollama_client(ollama_host: str) -> ollama.Client | None:
     """
     Tries to connect to the Ollama server and returns a client instance.
     Returns None if the connection fails.
@@ -120,16 +117,18 @@ def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
         return None
 
 # Define a custom type converter for device indices that handles 'none'
-def device_index_type(value: str) -> Optional[int]:
+def device_index_type(value: str) -> int | None:
     """Converts a string argument to an int index or None."""
     if value.lower() == 'none':
         return None
     try:
         return int(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"Invalid device index: '{value}'. Must be an integer or 'none'.")
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"Invalid device index: '{value}'. Must be an integer or 'none'."
+        ) from e
 
-def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParser, bool]:
+def load_config_and_args() -> tuple[argparse.Namespace, configparser.ConfigParser, bool]:
     """
     Loads settings from config.ini, parses command-line arguments,
     and sets up logging. Paths are resolved relative to the project root.
@@ -155,7 +154,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
              return default
 
         # configparser's getboolean is robust, so use it directly for bools
-        if type_converter == bool:
+        if type_converter is bool:
             try:
                 return section.getboolean(key, fallback=default)
             except ValueError: # Handle cases where boolean value is malformed
@@ -178,7 +177,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
         try:
             # For int type, handle 'none' string specially if it's meant to be None
-            if type_converter == int and isinstance(processed_val, str) and processed_val.lower() == 'none':
+            if type_converter is int and isinstance(processed_val, str) and processed_val.lower() == 'none':
                 return None
             
             # Attempt to convert to the target type
@@ -190,6 +189,12 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     parser = argparse.ArgumentParser(description="A hands-free voice assistant for Ollama.")
 
+    # Version flag — read from the package metadata so we always report what's installed.
+    try:
+        from voice_assistant import __version__ as _pkg_version
+    except Exception:
+        _pkg_version = "unknown"
+    parser.add_argument('--version', action='version', version=f"ollama-voice-assistant {_pkg_version}")
     parser.add_argument('--list-devices', action='store_true', help="List available audio input devices and exit.")
     parser.add_argument('--list-output-devices', action='store_true', help="List available audio output devices and exit.")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging.")
@@ -287,7 +292,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
                         f"Max: {MAX_SYSTEM_PROMPT_FILE_SIZE} bytes"
                     )
 
-                with open(potential_path, 'r', encoding='utf-8') as f:
+                with open(potential_path, encoding='utf-8') as f:
                     args.system_prompt = f.read().strip()
                 if not args.system_prompt:
                     logging.warning(f"System prompt file '{potential_path}' is empty. Using default.")

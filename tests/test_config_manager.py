@@ -1,14 +1,15 @@
+import argparse
+import os
+import sys
 import unittest
 from unittest.mock import patch
-import argparse
-import sys
-import os
 
 # To import voice_assistant modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from voice_assistant.config_manager import load_config_and_args
 from voice_assistant.audio_utils import DEFAULT_SETTINGS
+from voice_assistant.config_manager import load_config_and_args
+
 
 class TestConfigManager(unittest.TestCase):
 

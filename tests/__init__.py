@@ -6,9 +6,9 @@ This file makes the tests/ directory a Python package and can contain
 shared test configuration, fixtures, and utilities.
 """
 
+import logging
 import os
 import sys
-import logging
 
 # Make the `voice_assistant` package importable from src/.
 # This allows: from voice_assistant.audio_utils import DEFAULT_SETTINGS
@@ -55,6 +55,7 @@ def skip_if_ollama_unavailable():
             pass
     """
     import unittest
+
     import requests
     
     def decorator(test_func):
@@ -67,7 +68,7 @@ def skip_if_ollama_unavailable():
                 if response.status_code != 200:
                     raise unittest.SkipTest("Ollama server not responding")
             except Exception as e:
-                raise unittest.SkipTest(f"Ollama unavailable: {e}")
+                raise unittest.SkipTest(f"Ollama unavailable: {e}") from e
             
             return test_func(*args, **kwargs)
         

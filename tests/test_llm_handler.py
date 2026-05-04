@@ -1,14 +1,15 @@
+import argparse
+import os
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
-import sys
-import os
-import argparse
 
 # To import voice_assistant modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from voice_assistant.llm_handler import LLMHandler
 from voice_assistant.audio_utils import MAX_HISTORY_MESSAGES
+from voice_assistant.llm_handler import LLMHandler
+
 
 class TestLLMHandler(unittest.TestCase):
 
@@ -89,13 +90,10 @@ class TestLLMHandler(unittest.TestCase):
             self.handler.messages.append({'role': 'user', 'content': f'User message {i}'})
             self.handler.messages.append({'role': 'assistant', 'content': f'Assistant response {i}'})
 
-        initial_length = len(self.handler.messages)
-        
         # This will trigger the prune
         self.handler.chat_stream("This is the final message.")
 
         # Check that the history has been pruned
-        final_length = len(self.handler.messages)
         expected_length = (MAX_HISTORY_MESSAGES * 2) + 1 # System prompt + max pairs
         
         # After the new message is added, the history is pruned, then the new user message is added

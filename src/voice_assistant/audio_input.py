@@ -3,12 +3,13 @@
 import logging
 import queue
 import time
+
 import numpy as np
 import sounddevice as sd
 import webrtcvad
-from .audio_utils import (
-    FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX
-)
+
+from .audio_utils import CHANNELS, CHUNK_SIZE, FORMAT_NP, INT16_MAX, RATE
+
 
 class AudioInput:
     def __init__(self, args):

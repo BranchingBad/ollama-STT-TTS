@@ -1,10 +1,10 @@
-import unittest
-from unittest.mock import patch, MagicMock, mock_open
-import sys
-import os
 import argparse
+import os
+import sys
 import threading
-import time
+import unittest
+from unittest.mock import MagicMock, mock_open, patch
+
 import numpy as np
 
 # Make voice_assistant importable from src/.

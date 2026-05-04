@@ -1,14 +1,16 @@
-import logging
 import json
+import logging
 import os
 import queue
 import threading
-import time
+
 import numpy as np
 import sounddevice as sd
-from scipy.signal import resample
 from piper import PiperVoice
-from .audio_utils import RATE, MAX_TTS_ERRORS
+from scipy.signal import resample
+
+from .audio_utils import MAX_TTS_ERRORS
+
 
 class Synthesizer:
     def __init__(self, args, interrupt_event: threading.Event):
@@ -34,7 +36,7 @@ class Synthesizer:
             if not os.path.exists(config_path):
                 raise FileNotFoundError(f"Config not found: {config_path}")
 
-            with open(config_path, 'r') as f:
+            with open(config_path) as f:
                 config = json.load(f)
                 self.sample_rate = int(config['audio']['sample_rate'])
 
