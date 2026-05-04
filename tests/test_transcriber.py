@@ -128,8 +128,12 @@ class TestTranscriber(unittest.TestCase):
         audio_np = np.random.rand(16000).astype(np.float32)
         
         # We test the internal method directly to avoid threading complexities
-        result = transcriber._internal_transcribe(audio_np)
-        
+        result = transcriber._internal_transcribe(
+            audio_np,
+            avg_logprob_threshold=self.args.whisper_avg_logprob,
+            no_speech_threshold=self.args.whisper_no_speech_prob,
+        )
+
         self.assertEqual(result, "This is a good segment.")
 
 if __name__ == '__main__':

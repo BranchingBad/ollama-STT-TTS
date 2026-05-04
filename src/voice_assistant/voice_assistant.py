@@ -13,6 +13,7 @@ from .transcriber import Transcriber
 from .synthesizer import Synthesizer
 from .llm_handler import LLMHandler
 from .audio_utils import SENTENCE_END_PUNCTUATION, monitor_memory
+from .wakeword import WakewordDetector
 
 class VoiceAssistant:
     def __init__(self, args, client):
@@ -20,14 +21,18 @@ class VoiceAssistant:
         self.interrupt_event = threading.Event()
         self.conversation_count = 0
         self.is_handling_conversation = False
-        
-        # Wake word detection improvements
-        self.last_wakeword_time = 0
-        self.wakeword_cooldown = 1.0  # Reduced from 1.5s
-        self.consecutive_detection_count = 0
-        self.required_consecutive = 2  # Confirmations needed
-        
-        logging.debug(f"VoiceAssistant init - cooldown: {self.wakeword_cooldown}s, required consecutive: {self.required_consecutive}")
+
+        self.wakeword_detector = WakewordDetector(
+            threshold=args.wakeword_threshold,
+            cooldown_seconds=1.0,
+            required_consecutive=2,
+            window=5,
+        )
+
+        logging.debug(
+            f"VoiceAssistant init - cooldown: {self.wakeword_detector.cooldown_seconds}s, "
+            f"required consecutive: {self.wakeword_detector.required_consecutive}"
+        )
         
         # Initialize Subsystems
         self.audio = AudioInput(args)
@@ -53,83 +58,48 @@ class VoiceAssistant:
     def run(self):
         logging.info(f"Ready! Listening for '{self.args.wakeword}'...")
         self.audio.start()
-        
-        # Track wake word scores for debugging
-        score_history = []
-        # Track time-weighted moving average for more stable detection
-        weighted_scores = []
-        
+
         try:
             while True:
                 if self.is_handling_conversation:
                     time.sleep(0.01)
                     continue
-                # 1. Get audio for Wakeword Detection
+
                 chunk = self.audio.get_chunk()
                 if not chunk:
                     time.sleep(0.001)
                     continue
 
-                # 2. Check Wakeword with improved logic
                 int16_audio = np.frombuffer(chunk, dtype=np.int16)
                 prediction = self.oww_model.predict(int16_audio)
                 score = prediction.get(self.wakeword_key, 0)
-                
-                # Track scores for debugging (keep last 100)
-                score_history.append(score)
-                if len(score_history) > 100:
-                    score_history.pop(0)
-                
-                current_time = time.time()
-                
-                # IMPROVEMENT: Add score to weighted history (last 5 scores)
-                weighted_scores.append(score)
-                if len(weighted_scores) > 5:
-                    weighted_scores.pop(0)
-                
-                # Calculate moving average for more stable detection
-                avg_score = sum(weighted_scores) / len(weighted_scores)
-                
-                # Enhanced wake word detection
-                if score > self.args.wakeword_threshold:
-                    # Check cooldown period to prevent rapid re-triggers
-                    if current_time - self.last_wakeword_time > self.wakeword_cooldown:
-                        # Require consistent detection to reduce false positives
-                        self.consecutive_detection_count += 1
-                        
-                        logging.debug(f"Wakeword candidate detected (score: {score:.2f}, avg: {avg_score:.2f}, consecutive: {self.consecutive_detection_count}/{self.required_consecutive})")
-                        
-                        # IMPROVEMENT: Require both high instant score AND good average
-                        if (self.consecutive_detection_count >= self.required_consecutive and 
-                            avg_score > self.args.wakeword_threshold * 0.85):
-                            
-                            # Log recent score history
-                            recent_scores = [f"{s:.2f}" for s in score_history[-10:]]
-                            logging.info(f"Wakeword detected! (score: {score:.2f}, avg: {avg_score:.2f}, recent: {', '.join(recent_scores)})")
-                            
-                            self.last_wakeword_time = current_time
-                            self.consecutive_detection_count = 0
-                            weighted_scores.clear()
-                            self.oww_model.reset()
-                            
-                            self.is_handling_conversation = True
-                            self._handle_conversation()
-                            
-                            # Clear score history after conversation
-                            score_history.clear()
-                            logging.info(f"Ready! Listening for '{self.args.wakeword}'...")
-                    else:
-                        time_since_last = current_time - self.last_wakeword_time
-                        logging.debug(f"Wakeword in cooldown period (score: {score:.2f}, time since last: {time_since_last:.2f}s)")
-                else:
-                    # Reset consecutive count if score drops below threshold
-                    if self.consecutive_detection_count > 0:
-                        logging.debug(f"Wakeword detection sequence broken (score: {score:.2f})")
-                        self.consecutive_detection_count = 0
+
+                decision = self.wakeword_detector.feed(score, time.time())
+
+                if decision.in_cooldown:
+                    logging.debug(f"Wakeword in cooldown period (score: {score:.2f})")
+                    continue
+
+                if decision.triggered:
+                    logging.info(
+                        f"Wakeword detected! (score: {decision.score:.2f}, "
+                        f"avg: {decision.avg_score:.2f})"
+                    )
+                    self.oww_model.reset()
+                    self.is_handling_conversation = True
+                    self._handle_conversation()
+                    self.wakeword_detector.reset()
+                    logging.info(f"Ready! Listening for '{self.args.wakeword}'...")
+                elif decision.consecutive > 0:
+                    logging.debug(
+                        f"Wakeword candidate (score: {decision.score:.2f}, "
+                        f"avg: {decision.avg_score:.2f}, "
+                        f"consecutive: {decision.consecutive}/"
+                        f"{self.wakeword_detector.required_consecutive})"
+                    )
 
         except KeyboardInterrupt:
             logging.info("Stopping...")
-        self.cleanup()
 
     def _process_plugins(self, text: str) -> str:
         """Processes simple plugins like [current time]."""
@@ -318,44 +288,39 @@ class VoiceAssistant:
             self.is_handling_conversation = False
 
     def _transcribe_with_retry(self, audio_np: np.ndarray, max_retries: int = 3) -> str:
-        """Transcribe with progressive threshold relaxation and better logging."""
-        original_logprob = self.args.whisper_avg_logprob
-        original_nospeech = self.args.whisper_no_speech_prob
-        
-        # Define threshold progression
+        """Transcribe with progressive threshold relaxation. Pure-functional: no
+        mutation of self.args, so it's safe under concurrent / interrupted use."""
+        base_logprob = self.args.whisper_avg_logprob
+        base_nospeech = self.args.whisper_no_speech_prob
+
         threshold_steps = [
-            (original_logprob, original_nospeech),
-            (original_logprob - 0.15, original_nospeech + 0.1),
-            (original_logprob - 0.3, original_nospeech + 0.2),
+            (base_logprob, base_nospeech),
+            (base_logprob - 0.15, base_nospeech + 0.1),
+            (base_logprob - 0.3, base_nospeech + 0.2),
         ]
-        
-        logging.debug(f"Starting transcription (initial thresholds: logprob={original_logprob}, no_speech={original_nospeech})")
-        
+
+        logging.debug(f"Starting transcription (initial thresholds: logprob={base_logprob}, no_speech={base_nospeech})")
+
         for attempt in range(min(max_retries, len(threshold_steps))):
             logprob_threshold, nospeech_threshold = threshold_steps[attempt]
-            
-            # Update thresholds
-            self.args.whisper_avg_logprob = logprob_threshold
-            self.args.whisper_no_speech_prob = nospeech_threshold
-            
-            logging.debug(f"Transcription attempt {attempt + 1}/{max_retries} (logprob={logprob_threshold:.2f}, no_speech={nospeech_threshold:.2f})")
-            
-            user_text = self.transcriber.transcribe(audio_np)
-            
+            logging.debug(
+                f"Transcription attempt {attempt + 1}/{max_retries} "
+                f"(logprob={logprob_threshold:.2f}, no_speech={nospeech_threshold:.2f})"
+            )
+
+            user_text = self.transcriber.transcribe(
+                audio_np,
+                avg_logprob_threshold=logprob_threshold,
+                no_speech_threshold=nospeech_threshold,
+            )
+
             if user_text and user_text.strip():
                 logging.debug(f"Transcription successful on attempt {attempt + 1}: '{user_text}'")
-                # Restore original thresholds
-                self.args.whisper_avg_logprob = original_logprob
-                self.args.whisper_no_speech_prob = original_nospeech
                 return user_text
-            
+
             if attempt < max_retries - 1:
                 logging.debug(f"Attempt {attempt + 1} failed, trying with relaxed thresholds")
-        
-        # Restore original thresholds
-        self.args.whisper_avg_logprob = original_logprob
-        self.args.whisper_no_speech_prob = original_nospeech
-        
+
         logging.warning(f"All {max_retries} transcription attempts failed")
         return ""
 

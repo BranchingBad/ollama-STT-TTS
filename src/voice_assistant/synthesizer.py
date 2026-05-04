@@ -44,10 +44,23 @@ class Synthesizer:
             logging.critical(f"TTS Init Failed: {e}")
             self.has_failed.set()
 
+    def _resolve_target_sample_rate(self) -> int:
+        """Pick a sample rate the configured output device actually supports."""
+        try:
+            info = sd.query_devices(self.args.piper_output_device_index, kind='output')
+            device_rate = int(info.get('default_samplerate') or 0)
+            if device_rate > 0:
+                logging.debug(f"TTS output device default rate: {device_rate}Hz")
+                return device_rate
+        except Exception as e:
+            logging.warning(f"Could not query output device sample rate, falling back: {e}")
+        # Fall back to the model's native rate to avoid resampling failures.
+        return self.sample_rate
+
     def _worker(self):
         consecutive_errors = 0
-        target_sample_rate = 48000  # Match device default sample rate
-        
+        target_sample_rate = self._resolve_target_sample_rate()
+
         while not self.stop_event.is_set():
             text = None
             try:

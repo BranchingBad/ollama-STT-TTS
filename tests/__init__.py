@@ -10,12 +10,14 @@ import os
 import sys
 import logging
 
-# Add the parent directory to the Python path so tests can import from app/
-# This allows: from app.audio_utils import DEFAULT_SETTINGS
+# Make the `voice_assistant` package importable from src/.
+# This allows: from voice_assistant.audio_utils import DEFAULT_SETTINGS
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(TESTS_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
+for path in (PROJECT_ROOT, SRC_DIR):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Configure logging for tests
 logging.basicConfig(

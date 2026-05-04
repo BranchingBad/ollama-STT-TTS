@@ -41,6 +41,23 @@ CONFIG_FILE_NAME = os.path.join(PROJECT_ROOT, 'config.ini')
 MAX_SYSTEM_PROMPT_FILE_SIZE = 10 * 1024  # 10KB limit for system prompt files
 ALLOWED_MODEL_DIRECTORIES = [os.path.join(PROJECT_ROOT, 'models'), os.path.join(PROJECT_ROOT, 'Models')]
 
+def _looks_like_prompt_file_path(value: str) -> bool:
+    """Heuristic: should we treat `value` as a path to a prompt file, or as the
+    prompt text itself? We only treat it as a path if it is short, contains no
+    newlines, and either ends in .txt/.md or is an existing file on disk."""
+    if not value or '\n' in value:
+        return False
+    if len(value) > 260:  # exceeds typical Windows MAX_PATH
+        return False
+    lowered = value.lower().strip()
+    if lowered.endswith(('.txt', '.md', '.prompt')):
+        return True
+    # Existing-file fast path (absolute paths or paths under project root)
+    if os.path.sep in value or '/' in value:
+        return True
+    return False
+
+
 def sanitize_file_path(file_path: str, description: str = "file") -> str:
     """
     Sanitizes and validates file paths. If a relative path is given,
@@ -250,22 +267,32 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     try:
         args.wakeword_model_path = sanitize_file_path(args.wakeword_model_path, "wakeword model")
         args.piper_model_path = sanitize_file_path(args.piper_model_path, "Piper TTS model")
-        
-        # Handle system prompt, which could be a string or a file path
-        # Try to resolve it as a file path first
-        potential_path = sanitize_file_path(args.system_prompt, "system prompt file")
-        if os.path.isfile(potential_path):
-            logging.info(f"Loading system prompt from file: {potential_path}")
-            file_size = os.path.getsize(potential_path)
-            if file_size > MAX_SYSTEM_PROMPT_FILE_SIZE:
-                raise ValueError(f"System prompt file too large ({file_size} bytes). Max: {MAX_SYSTEM_PROMPT_FILE_SIZE} bytes")
-            
-            with open(potential_path, 'r', encoding='utf-8') as f:
-                args.system_prompt = f.read().strip()
-            if not args.system_prompt:
-                 logging.warning(f"System prompt file '{potential_path}' is empty. Using default.")
-                 args.system_prompt = DEFAULT_SETTINGS['system_prompt']
-                 
+
+        # The system prompt may be either an inline string OR a path to a .txt file.
+        # We only attempt path resolution when the value *looks* like a path; otherwise
+        # path-traversal-looking prompts (e.g. ones containing `..` literally) would
+        # be rejected by sanitize_file_path() and the assistant would refuse to start.
+        if args.system_prompt and _looks_like_prompt_file_path(args.system_prompt):
+            try:
+                potential_path = sanitize_file_path(args.system_prompt, "system prompt file")
+            except ValueError:
+                potential_path = None
+
+            if potential_path and os.path.isfile(potential_path):
+                logging.info(f"Loading system prompt from file: {potential_path}")
+                file_size = os.path.getsize(potential_path)
+                if file_size > MAX_SYSTEM_PROMPT_FILE_SIZE:
+                    raise ValueError(
+                        f"System prompt file too large ({file_size} bytes). "
+                        f"Max: {MAX_SYSTEM_PROMPT_FILE_SIZE} bytes"
+                    )
+
+                with open(potential_path, 'r', encoding='utf-8') as f:
+                    args.system_prompt = f.read().strip()
+                if not args.system_prompt:
+                    logging.warning(f"System prompt file '{potential_path}' is empty. Using default.")
+                    args.system_prompt = DEFAULT_SETTINGS['system_prompt']
+
     except ValueError as e:
         logging.critical(f"Configuration error: {e}")
         logging.critical("Please check your file paths in config.ini or command-line arguments.")
