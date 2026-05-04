@@ -6,16 +6,18 @@ This file makes the tests/ directory a Python package and can contain
 shared test configuration, fixtures, and utilities.
 """
 
+import logging
 import os
 import sys
-import logging
 
-# Add the parent directory to the Python path so tests can import from app/
-# This allows: from app.audio_utils import DEFAULT_SETTINGS
+# Make the `voice_assistant` package importable from src/.
+# This allows: from voice_assistant.audio_utils import DEFAULT_SETTINGS
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(TESTS_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
+for path in (PROJECT_ROOT, SRC_DIR):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Configure logging for tests
 logging.basicConfig(
@@ -53,6 +55,7 @@ def skip_if_ollama_unavailable():
             pass
     """
     import unittest
+
     import requests
     
     def decorator(test_func):
@@ -65,7 +68,7 @@ def skip_if_ollama_unavailable():
                 if response.status_code != 200:
                     raise unittest.SkipTest("Ollama server not responding")
             except Exception as e:
-                raise unittest.SkipTest(f"Ollama unavailable: {e}")
+                raise unittest.SkipTest(f"Ollama unavailable: {e}") from e
             
             return test_func(*args, **kwargs)
         

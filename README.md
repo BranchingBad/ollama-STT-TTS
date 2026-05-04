@@ -84,7 +84,22 @@ On the first run, the application will automatically download the required `fast
 ## ⌨️ 3. Running the Assistant
 You can run the assistant either locally with Python or via Docker. **All commands should be run from the root of the project directory.**
 
-### 🐍 A. Run Locally with Python
+### 🖱️ A. Run on Windows by double-clicking
+For day-to-day use on Windows, just **double-click [`start.bat`](start.bat)** in the project folder. The launcher will:
+- switch into the project directory,
+- pick up a `.venv\` / `venv\` Python if you have one (otherwise the system `python`),
+- check that Ollama is reachable, and
+- run `run.py`.
+
+The window stays open after exit so you can read any error before it closes.
+
+Helper launchers in the same folder:
+- **[`start-debug.bat`](start-debug.bat)** — same as `start.bat` but adds `--debug` for verbose logging. Use this when tuning the wake-word threshold or mic gain.
+- **[`list-devices.bat`](list-devices.bat)** — print available audio input/output devices and their indices, so you know what to put in `config.ini` (`device_index`, `piper_output_device_index`).
+
+To run from the desktop, right-click `start.bat` → *Send to* → *Desktop (create shortcut)*. You can rename and re-icon the shortcut as you like.
+
+### 🐍 B. Run Locally with Python
 Make sure your Ollama application is running. Then, start the assistant:
 ```bash
 python run.py
@@ -107,7 +122,7 @@ When ready, you will see the message: `Ready! Listening for 'hey jarvis'...
 - `"goodbye"` or `"exit"`: Stops the script.
 - `"new chat"` or `"reset chat"`: Clears the conversation history for the LLM.
 
-### 🐋 B. Run with Docker
+### 🐋 C. Run with Docker
 A pre-built Docker image is available on the GitHub Container Registry.
 
 **1. Pull the Image:**
@@ -170,13 +185,55 @@ This project includes a suite of unit tests to ensure the reliability of its cor
 -   LLM handling
 -   Audio transcription
 -   Speech synthesis
+-   Wake-word debouncing logic
 
 ### Running the Tests
 To run the tests, first ensure you have installed the development dependencies:
 ```bash
 pip install -e .[test]
 ```
-Then, run `pytest` from the root of the project directory:
+Then, run `pytest` and `ruff` from the root of the project directory:
 ```bash
 python3 -m pytest
+ruff check src tests
+```
+
+A sample debug run is captured in [`docs/sample-conversation.log`](docs/sample-conversation.log).
+
+## 🚑 6. Troubleshooting
+
+### "OSError: PortAudio library not found" / "cannot find -lportaudio"
+You're missing the system-level audio library. Install it as described in the *Prerequisites* section (`portaudio19-dev` on Debian/Ubuntu, `portaudio-devel` on Fedora, `brew install portaudio` on macOS).
+
+### "Failed to connect to Ollama at http://localhost:11434"
+- Make sure `ollama serve` is running in another terminal (or the Ollama desktop app is open).
+- Verify the model is pulled: `ollama list` should include the model named in `config.ini`.
+- If you run inside Docker without `--network=host`, set `ollama_host = http://host.docker.internal:11434` in `config.ini`.
+
+### Microphone permission denied (macOS / Windows)
+- **macOS:** Go to *System Settings → Privacy & Security → Microphone* and enable access for your terminal / IDE.
+- **Windows:** *Settings → Privacy → Microphone* → allow desktop apps.
+- Inside WSL the host microphone is not exposed by default; run from native Windows Python instead.
+
+### "Wakeword model missing" on startup
+Either the path in `config.ini` is wrong or the file under `models/` was not pulled. Check that `wakeword_model_path` resolves to one of the `.onnx` files actually present in `models/`. Relative paths are resolved against the project root.
+
+### Wake word never triggers / triggers all the time
+- Run `python run.py --debug` and watch the live `score`/`avg` values in the log.
+- Lower `wakeword_threshold` if your real wake-word scores are below it; raise it if you see false positives.
+- A headset with a close-mic gives noticeably better results than a laptop's built-in mic.
+
+### "Audio may be clipping" warnings
+Reduce `gain` in `config.ini` (e.g. from `1.0` to `0.7`).
+
+### Whisper transcription is empty or wrong
+- Try a larger `whisper_model` (e.g. `base.en` → `small.en`).
+- If Whisper's `no_speech_prob` is consistently near 1.0 in `--debug` logs, your VAD is keeping non-speech audio — increase `vad_aggressiveness` (0–3) or trim `pre_buffer_ms`.
+
+### `pip install .` fails on `webrtcvad`
+You need a C compiler. On Debian/Ubuntu: `sudo apt-get install build-essential`. On Windows, install the *Visual C++ Build Tools*.
+
+### Check version
+```bash
+python run.py --version
 ```

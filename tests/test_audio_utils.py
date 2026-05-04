@@ -1,13 +1,14 @@
-import unittest
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
+import unittest
 from io import StringIO
+from unittest.mock import MagicMock, patch
 
 # To import voice_assistant modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from voice_assistant.audio_utils import list_audio_input_devices, list_audio_output_devices, monitor_memory
+
 
 class TestAudioUtils(unittest.TestCase):
 

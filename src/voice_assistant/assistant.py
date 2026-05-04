@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 # --- IMPROVEMENT: Top-Level Dependency Check ---
 # Encapsulate critical imports to provide clear error messages if dependencies are missing.
 try:
-    from .config_manager import load_config_and_args, get_ollama_client
+    from .config_manager import get_ollama_client, load_config_and_args
     from .voice_assistant import VoiceAssistant
 except ImportError as e:
     print(
@@ -84,12 +84,13 @@ def main() -> None:
 
         assistant.run()
 
-    except IOError as e:
-        # This catches PyAudio/sounddevice stream errors during initialization
-        logging.critical(f"FATAL ERROR during audio initialization: {e}")
-        logging.critical("Check microphone connectivity or use --list-devices.")
-    except (RuntimeError, OSError, ValueError) as e:
-        # This catches model loading errors (Whisper, Piper, OpenWakeWord)
+    except OSError as e:
+        # PyAudio / sounddevice stream errors and missing-file errors during
+        # model load both surface as OSError subclasses.
+        logging.critical(f"FATAL ERROR during audio or model initialization: {e}")
+        logging.critical("Check microphone connectivity, model paths, and --list-devices.")
+    except (RuntimeError, ValueError) as e:
+        # Model loading errors (Whisper / Piper / OpenWakeWord init failures)
         logging.critical(f"FATAL ERROR during model loading: {e}")
     except Exception as e:
         logging.critical(f"An unexpected error occurred: {e}", exc_info=True)

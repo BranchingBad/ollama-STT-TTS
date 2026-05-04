@@ -22,14 +22,13 @@ def main():
     
     to_remove = {
         "dirs": [
-            os.path.join(project_root, 'app'),
             os.path.join(project_root, '.pytest_cache'),
+            os.path.join(project_root, '.ruff_cache'),
+            os.path.join(project_root, '.mypy_cache'),
             os.path.join(project_root, 'build'),
             os.path.join(project_root, 'dist'),
         ],
-        "files": [
-            os.path.join(project_root, 'requirements.txt'),
-        ],
+        "files": [],
         "patterns": [
             os.path.join(project_root, '**', '__pycache__'),
             os.path.join(project_root, '*.egg-info'),

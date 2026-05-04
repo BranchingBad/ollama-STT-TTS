@@ -1,7 +1,10 @@
-import logging
-import ollama
 import gc
-from .audio_utils import MAX_HISTORY_MESSAGES, SENTENCE_END_PUNCTUATION
+import logging
+
+import ollama
+
+from .audio_utils import MAX_HISTORY_MESSAGES
+
 
 class LLMHandler:
     def __init__(self, client: ollama.Client, args):
@@ -15,9 +18,15 @@ class LLMHandler:
 
     def chat_stream(self, user_text: str):
         """Yields tokens from the LLM response."""
+        # Snapshot history before mutation so we can roll back to a known-good
+        # state if streaming fails partway. Plain rollback-by-popping was
+        # unsafe because _prune_history() may have already discarded older
+        # turns, leaving the list in an inconsistent state.
+        history_snapshot = list(self.messages)
+
         self.messages.append({'role': 'user', 'content': user_text})
         self._prune_history()
-        
+
         full_response = ""
         try:
             stream = self.client.chat(
@@ -29,14 +38,12 @@ class LLMHandler:
                 token = chunk.get('message', {}).get('content', '')
                 full_response += token
                 yield token
-                
+
             self.messages.append({'role': 'assistant', 'content': full_response})
-            
+
         except Exception as e:
             logging.error(f"Ollama Error: {e}")
-            # Rollback user message on failure
-            if self.messages and self.messages[-1]['role'] == 'user':
-                self.messages.pop()
+            self.messages = history_snapshot
             yield None
 
     def _prune_history(self):

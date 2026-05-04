@@ -3,12 +3,13 @@
 import logging
 import queue
 import time
+
 import numpy as np
 import sounddevice as sd
 import webrtcvad
-from .audio_utils import (
-    FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX
-)
+
+from .audio_utils import CHANNELS, CHUNK_SIZE, FORMAT_NP, INT16_MAX, RATE
+
 
 class AudioInput:
     def __init__(self, args):
@@ -65,10 +66,12 @@ class AudioInput:
             pass # Buffer full, drop chunk
 
     def get_chunk(self, timeout=0.01):
+        # Note: stream_buffer is a queue used as a ring buffer between the
+        # audio callback and the main thread. We deliberately do NOT call
+        # task_done() / join() on it because nothing waits for it; pairing
+        # them would only invite future deadlocks.
         try:
-            chunk = self.stream_buffer.get(timeout=timeout)
-            self.stream_buffer.task_done()
-            return chunk
+            return self.stream_buffer.get(timeout=timeout)
         except queue.Empty:
             return None
 

@@ -1,14 +1,16 @@
-import logging
 import json
+import logging
 import os
 import queue
 import threading
-import time
+
 import numpy as np
 import sounddevice as sd
-from scipy.signal import resample
 from piper import PiperVoice
-from .audio_utils import RATE, MAX_TTS_ERRORS
+from scipy.signal import resample
+
+from .audio_utils import MAX_TTS_ERRORS
+
 
 class Synthesizer:
     def __init__(self, args, interrupt_event: threading.Event):
@@ -34,7 +36,7 @@ class Synthesizer:
             if not os.path.exists(config_path):
                 raise FileNotFoundError(f"Config not found: {config_path}")
 
-            with open(config_path, 'r') as f:
+            with open(config_path) as f:
                 config = json.load(f)
                 self.sample_rate = int(config['audio']['sample_rate'])
 
@@ -44,10 +46,23 @@ class Synthesizer:
             logging.critical(f"TTS Init Failed: {e}")
             self.has_failed.set()
 
+    def _resolve_target_sample_rate(self) -> int:
+        """Pick a sample rate the configured output device actually supports."""
+        try:
+            info = sd.query_devices(self.args.piper_output_device_index, kind='output')
+            device_rate = int(info.get('default_samplerate') or 0)
+            if device_rate > 0:
+                logging.debug(f"TTS output device default rate: {device_rate}Hz")
+                return device_rate
+        except Exception as e:
+            logging.warning(f"Could not query output device sample rate, falling back: {e}")
+        # Fall back to the model's native rate to avoid resampling failures.
+        return self.sample_rate
+
     def _worker(self):
         consecutive_errors = 0
-        target_sample_rate = 48000  # Match device default sample rate
-        
+        target_sample_rate = self._resolve_target_sample_rate()
+
         while not self.stop_event.is_set():
             text = None
             try:

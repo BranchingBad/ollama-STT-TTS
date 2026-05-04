@@ -1,6 +1,7 @@
-import sounddevice as sd
+import sys  # Import sys for sys.stdout.write
 from typing import Any
-import sys # Import sys for sys.stdout.write
+
+import sounddevice as sd
 
 # --- 1. Audio Settings (Constants) ---
 FORMAT_NP: str = 'int16'          # Data type for sounddevice
@@ -20,7 +21,7 @@ DEFAULT_AUDIO_BUFFER_SIZE: int = 200
 DEFAULT_SETTINGS: dict[str, Any] = {
     'ollama_model': 'llama3',
     'whisper_model': 'base.en',
-    'wakeword_model_path': 'models/hey_jarvis_v2.onnx',
+    'wakeword_model_path': 'models/jarvis_v2.onnx',
     'piper_model_path': 'models/en_US-lessac-medium.onnx',
     'ollama_host': 'http://localhost:11434',
     'wakeword': 'hey jarvis',
@@ -49,35 +50,35 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 # --- 3. Audio Helpers (Updated for sounddevice) ---
 def list_audio_input_devices() -> None:
     """Lists all available audio input devices using sounddevice."""
-    sys.stdout.write("\n--- Available Audio Input Devices (sounddevice) ---\\n")
+    sys.stdout.write("\n--- Available Audio Input Devices (sounddevice) ---\n")
     try:
         devices = sd.query_devices()
         input_devices_found = False
         for i, dev in enumerate(devices):
             if dev.get('max_input_channels', 0) > 0:
-                sys.stdout.write(f"  Index {i}: {dev.get('name')}\\n")
+                sys.stdout.write(f"  Index {i}: {dev.get('name')}\n")
                 input_devices_found = True
         if not input_devices_found:
-            sys.stdout.write("  No input devices found.\\n")
+            sys.stdout.write("  No input devices found.\n")
     except Exception as e:
-        sys.stdout.write(f"Error listing input devices: {e}\\n")
-    sys.stdout.write("-------------------------------------------------\\n")
+        sys.stdout.write(f"Error listing input devices: {e}\n")
+    sys.stdout.write("-------------------------------------------------\n")
 
 def list_audio_output_devices() -> None:
     """Lists all available audio output devices using sounddevice."""
-    sys.stdout.write("\n--- Available Audio Output Devices (sounddevice) ---\\n")
+    sys.stdout.write("\n--- Available Audio Output Devices (sounddevice) ---\n")
     try:
         devices = sd.query_devices()
         output_devices_found = False
         for i, dev in enumerate(devices):
             if dev.get('max_output_channels', 0) > 0:
-                sys.stdout.write(f"  Index {i}: {dev.get('name')}\\n")
+                sys.stdout.write(f"  Index {i}: {dev.get('name')}\n")
                 output_devices_found = True
         if not output_devices_found:
-            sys.stdout.write("  No output devices found.\\n")
+            sys.stdout.write("  No output devices found.\n")
     except Exception as e:
-        sys.stdout.write(f"Error listing output devices: {e}\\n")
-    sys.stdout.write("--------------------------------------------------\\n")
+        sys.stdout.write(f"Error listing output devices: {e}\n")
+    sys.stdout.write("--------------------------------------------------\n")
 
 # --- 4. Memory Profiling Helper ---
 try:
